@@ -9,7 +9,13 @@
                 "org.quiltmc.test.PrelaunchTest"
             ],
             "main": [
-                "org.quiltmc.test.TestMod"
+                "org.quiltmc.test.TestMod",
+                "org.quiltmc.test.EntrypointTester"
+            ],
+            "test:testing": [
+              "org.quiltmc.test.EntrypointTest:::staticEntry",
+              "org.quiltmc.test.EntrypointTest::instanceEntry",
+              "org.quiltmc.test.EntrypointTest::FIELD_ENTRY"
             ]
         }
     }
