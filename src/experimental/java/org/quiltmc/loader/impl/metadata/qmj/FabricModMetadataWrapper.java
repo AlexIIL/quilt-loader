@@ -4,6 +4,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import net.fabricmc.loader.api.metadata.CustomValue;
+import net.fabricmc.loader.api.metadata.ModEnvironment;
+
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.LoaderValue;
 import org.quiltmc.loader.api.ModContributor;
@@ -20,6 +22,8 @@ import org.quiltmc.loader.impl.util.version.VersionPredicateParser;
 import net.fabricmc.loader.api.VersionParsingException;
 import net.fabricmc.loader.api.VersionPredicate;
 import net.fabricmc.loader.api.metadata.Person;
+
+import net.fabricmc.api.EnvType;
 
 public class FabricModMetadataWrapper implements InternalModMetadata {
 	public static final String GROUP = "loader.fabric";
@@ -247,6 +251,21 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 	}
 
 	@Override
+	public MinecraftEnvironmentSelector environment() {
+		ModEnvironment env = fabricMeta.getEnvironment();
+		switch (env) {
+			case CLIENT:
+				return MinecraftEnvironmentSelector.CLIENT_ONLY;
+			case SERVER:
+				return MinecraftEnvironmentSelector.SERVER_ONLY;
+			case UNIVERSAL:
+				return MinecraftEnvironmentSelector.EITHER;
+			default:
+				throw new IllegalStateException("Unknown EnvType " + env);
+		}
+	}
+
+	@Override
 	public Collection<?> provides() {
 		// TODO Auto-generated method stub
 		throw new AbstractMethodError("// TODO: Implement this!");
@@ -271,8 +290,7 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 
 	@Override
 	public Map<String, String> languageAdapters() {
-		// TODO Auto-generated method stub
-		throw new AbstractMethodError("// TODO: Implement this!");
+		return fabricMeta.getLanguageAdapterDefinitions();
 	}
 
 	@Override

@@ -36,8 +36,10 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	private final Collection<String> jars;
 	private final Map<String, String> languageAdapters;
 	private final Collection<String> repositories;
+	/* Internal fields - to be moved to plugins */
 	private final Collection<String> mixins;
 	private final Collection<String> accessWideners;
+	private final MinecraftEnvironmentSelector environment;
 
 	V1ModMetadataImpl(
 			JsonLoaderValue.ObjectImpl root,
@@ -64,7 +66,8 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 			Collection<String> repositories,
 			/* TODO: Move to plugins */
 			Collection<String> mixins,
-			Collection<String> accessWideners
+			Collection<String> accessWideners,
+			MinecraftEnvironmentSelector environment
 			// TODO: Custom objects - long term
 	) {
 		this.root = root;
@@ -110,6 +113,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 		// Move to plugins
 		this.mixins = Collections.unmodifiableCollection(mixins);
 		this.accessWideners = Collections.unmodifiableCollection(accessWideners);
+		this.environment = environment;
 	}
 
 	@Override
@@ -236,5 +240,10 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	@Override
 	public Collection<String> accessWideners() {
 		return this.accessWideners;
+	}
+
+	@Override
+	public MinecraftEnvironmentSelector environment() {
+		return this.environment;
 	}
 }

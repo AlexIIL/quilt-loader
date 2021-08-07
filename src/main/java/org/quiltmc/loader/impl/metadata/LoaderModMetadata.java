@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Internal variant of the ModMetadata interface.
+ * Internal variant of the fabric ModMetadata interface.
  */
 public interface LoaderModMetadata extends ModMetadata, ConvertibleModMetadata {
 	int getSchemaVersion();

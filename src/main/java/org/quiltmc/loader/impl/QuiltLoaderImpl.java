@@ -346,11 +346,11 @@ public class QuiltLoaderImpl implements FabricLoader {
 		LoaderModMetadata info = candidate.getInfo();
 		URL originUrl = candidate.getOriginUrl();
 
-		if (modMap.containsKey(info.getId())) {
+		if (modMap.containsKey(meta.id())) {
 			throw new ModResolutionException("Duplicate mod ID: " + meta.id() + "! (" + modMap.get(meta.id()).getOriginUrl().getFile() + ", " + originUrl.getFile() + ")");
 		}
 
-		if (!info.loadsInEnvironment(getEnvironmentType())) {
+		if (!meta.environment().loadsIn(getEnvironmentType())) {
 			return;
 		}
 
@@ -412,7 +412,7 @@ public class QuiltLoaderImpl implements FabricLoader {
 
 		for (ModContainer mod : mods) {
 			// add language adapters
-			for (Map.Entry<String, String> laEntry : mod.getInfo().getLanguageAdapterDefinitions().entrySet()) {
+			for (Map.Entry<String, String> laEntry : mod.getInternalMeta().languageAdapters().entrySet()) {
 				if (adapterMap.containsKey(laEntry.getKey())) {
 					throw new RuntimeException("Duplicate language adapter key: " + laEntry.getKey() + "! (" + laEntry.getValue() + ", " + adapterMap.get(laEntry.getKey()).getClass().getName() + ")");
 				}

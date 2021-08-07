@@ -5,6 +5,8 @@ import java.util.Collection;
 import org.jetbrains.annotations.ApiStatus;
 import org.quiltmc.loader.api.ModMetadata;
 
+import net.fabricmc.api.EnvType;
+
 /**
  * Holder interface for all fields that should be moved to a loader plugin.
  *
@@ -16,4 +18,6 @@ public interface ModMetadataToBeMovedToPlugins extends ModMetadata {
 	Collection<String> mixins();
 
 	Collection<String> accessWideners();
+
+	MinecraftEnvironmentSelector environment();
 }
