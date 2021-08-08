@@ -48,15 +48,9 @@ public final class QuiltMixinBootstrap {
 	static Set<String> getMixinConfigs(QuiltLoaderImpl loader, EnvType type) {
 		Set<String> set = new HashSet<>();
 		for (org.quiltmc.loader.impl.ModContainer c : loader.getMods()) {
-			c.getInternalMeta().mixins();
+			set.addAll(c.getInternalMeta().mixins(type));
 		}
-//		return set;
-		return loader.getAllMods().stream()
-			.map(ModContainer::getMetadata)
-			.filter((m) -> m instanceof LoaderModMetadata)
-			.flatMap((m) -> ((LoaderModMetadata) m).getMixinConfigs(type).stream())
-			.filter(s -> s != null && !s.isEmpty())
-			.collect(Collectors.toSet());
+		return set;
 	}
 
 	public static void init(EnvType side, QuiltLoaderImpl loader) {

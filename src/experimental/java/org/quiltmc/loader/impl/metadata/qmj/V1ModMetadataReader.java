@@ -9,7 +9,6 @@ import org.jetbrains.annotations.Nullable;
 import org.quiltmc.json5.exception.ParseException;
 import org.quiltmc.loader.api.*;
 import org.quiltmc.loader.api.LoaderValue.LType;
-import org.quiltmc.loader.api.ModMetadataToBeMovedToPlugins.MixinEntry;
 import org.quiltmc.loader.impl.VersionConstraintImpl;
 import org.quiltmc.loader.impl.metadata.qmj.JsonLoaderValue.ArrayImpl;
 import org.quiltmc.loader.impl.metadata.qmj.JsonLoaderValue.ObjectImpl;
@@ -60,7 +59,7 @@ final class V1ModMetadataReader {
 		Map<String, String> languageAdapters = new LinkedHashMap<>();
 		List<String> repositories = new ArrayList<>();
 		/* TODO: Move to plugins */
-		Collection<MixinEntry> mixins = new ArrayList<>();
+		List<String> mixins = new ArrayList<>();
 		List<String> accessWideners = new ArrayList<>();
 		ModEnvironment environment = ModEnvironment.UNIVERSAL;
 
@@ -205,17 +204,14 @@ final class V1ModMetadataReader {
 				switch (mixinValue.type()) {
 				case ARRAY: {
 					JsonLoaderValue.ArrayImpl array = mixinValue.asArray();
-					for (int i = 0; i < array.size(); i++) {
-						mixins.add(readMixinEntry(array.get(i)));
-					}
+					readStringList(array, "mixin", mixins);
 					break;
 				}
 				case STRING:
-				case OBJECT:
-					mixins.add(readMixinEntry(mixinValue));
+					mixins.add(mixinValue.asString());
 					break;
 				default:
-					throw parseException(mixinValue, "mixin value must be an array of string/objects or a string or an object");
+					throw parseException(mixinValue, "mixin value must be an array of string or a string");
 				}
 			}
 
@@ -376,18 +372,6 @@ final class V1ModMetadataReader {
 				return ModEnvironment.UNIVERSAL;
 			default:
 				throw parseException(object, "environment must either be missing, 'client', 'server', or '*'");
-		}
-	}
-
-	private static MixinEntry readMixinEntry(JsonLoaderValue mixinValue) {
-		if (mixinValue.type() == LType.STRING) {
-			return new MixinEntry(mixinValue.asString(), ModEnvironment.UNIVERSAL);
-		} else if (mixinValue.type() == LType.OBJECT) {
-			ObjectImpl mixin = mixinValue.asObject();
-			String path = requiredString(mixin, "path");
-			return new MixinEntry(path, readEnvironment(mixin));
-		} else {
-			throw parseException(mixinValue, "mixin entries must either be an object or a string!");
 		}
 	}
 

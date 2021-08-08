@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 import net.fabricmc.loader.api.metadata.ModEnvironment;
+
+import net.fabricmc.api.EnvType;
+
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.*;
 
@@ -33,7 +36,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	private final Map<String, String> languageAdapters;
 	private final Collection<String> repositories;
 	/* Internal fields - to be moved to plugins */
-	private final Collection<MixinEntry> mixins;
+	private final Collection<String> mixins;
 	private final Collection<String> accessWideners;
 	private final ModEnvironment environment;
 
@@ -61,7 +64,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 			Map<String, String> languageAdapters,
 			Collection<String> repositories,
 			/* TODO: Move to plugins */
-			Collection<MixinEntry> mixins,
+			Collection<String> mixins,
 			Collection<String> accessWideners,
 			ModEnvironment environment
 			// TODO: Custom objects - long term
@@ -229,7 +232,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	}
 
 	@Override
-	public Collection<MixinEntry> mixins() {
+	public Collection<String> mixins(EnvType env) {
 		return this.mixins;
 	}
 

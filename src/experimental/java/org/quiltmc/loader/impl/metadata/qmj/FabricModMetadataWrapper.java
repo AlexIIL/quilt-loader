@@ -24,6 +24,8 @@ import net.fabricmc.loader.api.VersionParsingException;
 import net.fabricmc.loader.api.VersionPredicate;
 import net.fabricmc.loader.api.metadata.Person;
 
+import net.fabricmc.api.EnvType;
+
 public class FabricModMetadataWrapper implements InternalModMetadata {
 	public static final String GROUP = "loader.fabric";
 	private static final String NO_LOCATION = "location not supported";
@@ -250,9 +252,8 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 	}
 
 	@Override
-	public Collection<MixinEntry> mixins() {
-		// TODO Auto-generated method stub
-		throw new AbstractMethodError("// TODO: Implement this!");
+	public Collection<String> mixins(EnvType env) {
+		return fabricMeta.getMixinConfigs(env);
 	}
 
 	@Override
