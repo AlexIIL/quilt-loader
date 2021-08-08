@@ -259,7 +259,7 @@ public class QuiltModMetadataWrapper implements LoaderModMetadata {
 
 	@Override
 	public Collection<String> getOldInitializers() {
-		throw internalError();
+		return Collections.emptyList();
 	}
 
 	@Override

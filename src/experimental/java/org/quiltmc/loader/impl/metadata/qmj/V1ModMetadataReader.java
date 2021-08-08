@@ -9,8 +9,11 @@ import org.quiltmc.json5.exception.ParseException;
 import org.quiltmc.loader.api.*;
 import org.quiltmc.loader.api.LoaderValue.LType;
 import org.quiltmc.loader.impl.VersionConstraintImpl;
+import org.quiltmc.loader.impl.metadata.qmj.JsonLoaderValue.ArrayImpl;
 import org.quiltmc.loader.impl.metadata.qmj.JsonLoaderValue.ObjectImpl;
 import org.quiltmc.loader.impl.metadata.qmj.JsonLoaderValue.StringImpl;
+import org.quiltmc.loader.impl.metadata.qmj.ModMetadataToBeMovedToPlugins.MixinEntry;
+import org.spongepowered.tools.obfuscation.MixinValidator;
 
 import net.fabricmc.api.EnvType;
 
@@ -56,7 +59,7 @@ final class V1ModMetadataReader {
 		Map<String, String> languageAdapters = new LinkedHashMap<>();
 		List<String> repositories = new ArrayList<>();
 		/* TODO: Move to plugins */
-		List<String> mixins = new ArrayList<>();
+		Collection<MixinEntry> mixins = new ArrayList<>();
 		List<String> accessWideners = new ArrayList<>();
 		MinecraftEnvironmentSelector environment = MinecraftEnvironmentSelector.EITHER;
 
@@ -199,14 +202,19 @@ final class V1ModMetadataReader {
 
 			if (mixinValue != null) {
 				switch (mixinValue.type()) {
-				case ARRAY:
-					readStringList((JsonLoaderValue.ArrayImpl) mixinValue, "mixin", mixins);
+				case ARRAY: {
+					JsonLoaderValue.ArrayImpl array = mixinValue.getArray();
+					for (int i = 0; i < array.size(); i++) {
+						mixins.add(readMixinEntry(array.get(i)));
+					}
 					break;
+				}
 				case STRING:
-					mixins.add(mixinValue.getString());
+				case OBJECT:
+					mixins.add(readMixinEntry(mixinValue));
 					break;
 				default:
-					throw parseException(mixinValue, "mixin value must be an array of strings or a string");
+					throw parseException(mixinValue, "mixin value must be an array of string/objects or a string or an object");
 				}
 			}
 
@@ -225,27 +233,7 @@ final class V1ModMetadataReader {
 				}
 				JsonLoaderValue.ObjectImpl minecraft = minecraftValue.getObject();
 
-				@Nullable
-				JsonLoaderValue environmentValue = minecraft.get("environment");
-				if (environmentValue != null) {
-					if (environmentValue.type() != LType.STRING) {
-						throw parseException(environmentValue, "environment must be either 'client' or 'server'!");
-					}
-
-					switch (environmentValue.getString()) {
-						case "client": {
-							environment = MinecraftEnvironmentSelector.CLIENT_ONLY;
-							break;
-						}
-						case "server": {
-							environment = MinecraftEnvironmentSelector.SERVER_ONLY;
-							break;
-						}
-						default: {
-							throw parseException(environmentValue, "environment must be either 'client' or 'server'!");
-						}
-					}
-				}
+				environment = readEnvironment(minecraft);
 			}
 
 			// TODO: Minecraft game metadata
@@ -355,6 +343,40 @@ final class V1ModMetadataReader {
 				return ModLoadType.IF_REQUIRED;
 			default:
 				throw parseException(value, "load_type must be either 'always', 'if_possible', or 'if_required', but got '" + value.getString() + "'");
+		}
+	}
+
+	private static MinecraftEnvironmentSelector readEnvironment(JsonLoaderValue.ObjectImpl obj) {
+		JsonLoaderValue environmentValue = obj.get("environment");
+		if (environmentValue != null) {
+			if (environmentValue.type() != LType.STRING) {
+				throw parseException(environmentValue, "environment must be either 'client' or 'server'!");
+			}
+
+			switch (environmentValue.getString()) {
+				case "client": {
+					return MinecraftEnvironmentSelector.CLIENT_ONLY;
+				}
+				case "server": {
+					return MinecraftEnvironmentSelector.SERVER_ONLY;
+				}
+				default: {
+					throw parseException(environmentValue, "environment must be either 'client' or 'server'!");
+				}
+			}
+		}
+		return MinecraftEnvironmentSelector.EITHER;
+	}
+
+	private static MixinEntry readMixinEntry(JsonLoaderValue mixinValue) {
+		if (mixinValue.type() == LType.STRING) {
+			return new MixinEntry(mixinValue.getString(), MinecraftEnvironmentSelector.EITHER);
+		} else if (mixinValue.type() == LType.OBJECT) {
+			ObjectImpl mixin = mixinValue.getObject();
+			String path = requiredString(mixin, "path");
+			return new MixinEntry(path, readEnvironment(mixin));
+		} else {
+			throw parseException(mixinValue, "mixin entries must either be an object or a string!");
 		}
 	}
 

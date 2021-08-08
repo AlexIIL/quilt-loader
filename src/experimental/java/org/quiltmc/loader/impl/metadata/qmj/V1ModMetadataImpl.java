@@ -37,7 +37,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	private final Map<String, String> languageAdapters;
 	private final Collection<String> repositories;
 	/* Internal fields - to be moved to plugins */
-	private final Collection<String> mixins;
+	private final Collection<MixinEntry> mixins;
 	private final Collection<String> accessWideners;
 	private final MinecraftEnvironmentSelector environment;
 
@@ -65,7 +65,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 			Map<String, String> languageAdapters,
 			Collection<String> repositories,
 			/* TODO: Move to plugins */
-			Collection<String> mixins,
+			Collection<MixinEntry> mixins,
 			Collection<String> accessWideners,
 			MinecraftEnvironmentSelector environment
 			// TODO: Custom objects - long term
@@ -208,7 +208,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 
 	@Nullable
 	@Override
-	public Map<String, Collection<AdapterLoadableClassEntry>> getEntrypoints(String key) {
+	public Map<String, Collection<AdapterLoadableClassEntry>> getEntrypoints() {
 		return this.entrypoints;
 	}
 
@@ -233,7 +233,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	}
 
 	@Override
-	public Collection<String> mixins() {
+	public Collection<MixinEntry> mixins() {
 		return this.mixins;
 	}
 

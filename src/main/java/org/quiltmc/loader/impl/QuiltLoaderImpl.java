@@ -23,6 +23,7 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.stream.Collectors;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
@@ -48,6 +49,7 @@ import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
 import org.quiltmc.loader.impl.launch.knot.Knot;
 import org.quiltmc.loader.impl.metadata.EntrypointMetadata;
 import org.quiltmc.loader.impl.metadata.LoaderModMetadata;
+import org.quiltmc.loader.impl.metadata.qmj.AdapterLoadableClassEntry;
 import org.quiltmc.loader.impl.metadata.qmj.InternalModMetadata;
 import org.quiltmc.loader.impl.solver.ModSolveResult;
 import org.quiltmc.loader.impl.util.DefaultLanguageAdapter;
@@ -431,9 +433,9 @@ public class QuiltLoaderImpl implements FabricLoader {
 					entrypointStorage.addDeprecated(mod, adapter, in);
 				}
 
-				for (String key : mod.getInfo().getEntrypointKeys()) {
-					for (EntrypointMetadata in : mod.getInfo().getEntrypoints(key)) {
-						entrypointStorage.add(mod, key, in, adapterMap);
+				for (Map.Entry<String, Collection<AdapterLoadableClassEntry>> entry : mod.getInternalMeta().getEntrypoints().entrySet()) {
+					for (AdapterLoadableClassEntry in : entry.getValue()) {
+						entrypointStorage.add(mod, entry.getKey(), in, adapterMap);
 					}
 				}
 			} catch (Exception e) {
@@ -444,17 +446,16 @@ public class QuiltLoaderImpl implements FabricLoader {
 
 	public void loadAccessWideners() {
 		AccessWidenerReader accessWidenerReader = new AccessWidenerReader(accessWidener);
-		for (net.fabricmc.loader.api.ModContainer modContainer : getAllMods()) {
-			LoaderModMetadata modMetadata = (LoaderModMetadata) modContainer.getMetadata();
-			String accessWidener = modMetadata.getAccessWidener();
+		for (ModContainer mod : mods) {
 
-			if (accessWidener != null) {
-				Path path = modContainer.getPath(accessWidener);
+			InternalModMetadata meta = mod.getInternalMeta();
+			for (String accessWidener : meta.accessWideners()) {
+				Path path = mod.getPath(accessWidener);
 
 				try (BufferedReader reader = Files.newBufferedReader(path)) {
 					accessWidenerReader.read(reader, getMappingResolver().getCurrentRuntimeNamespace());
 				} catch (Exception e) {
-					throw new RuntimeException("Failed to read accessWidener file from mod " + modMetadata.getId(), e);
+					throw new RuntimeException("Failed to read accessWidener file from mod " + mod.getMetadata().getId(), e);
 				}
 			}
 		}

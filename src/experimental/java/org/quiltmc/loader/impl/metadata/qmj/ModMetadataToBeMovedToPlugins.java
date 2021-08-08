@@ -15,9 +15,19 @@ import net.fabricmc.api.EnvType;
 @Deprecated
 @ApiStatus.ScheduledForRemoval
 public interface ModMetadataToBeMovedToPlugins extends ModMetadata {
-	Collection<String> mixins();
+	Collection<MixinEntry> mixins();
 
 	Collection<String> accessWideners();
 
 	MinecraftEnvironmentSelector environment();
+
+	public static final class MixinEntry {
+		public final String path;
+		public final MinecraftEnvironmentSelector environment;
+
+		public MixinEntry(String path, MinecraftEnvironmentSelector environment) {
+			this.path = path;
+			this.environment = environment;
+		}
+	}
 }
