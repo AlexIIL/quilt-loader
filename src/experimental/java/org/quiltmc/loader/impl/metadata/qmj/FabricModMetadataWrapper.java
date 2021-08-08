@@ -250,7 +250,7 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 	}
 
 	@Override
-	public Collection<String> mixins() {
+	public Collection<MixinEntry> mixins() {
 		// TODO Auto-generated method stub
 		throw new AbstractMethodError("// TODO: Implement this!");
 	}
@@ -262,18 +262,8 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 	}
 
 	@Override
-	public MinecraftEnvironmentSelector environment() {
-		ModEnvironment env = fabricMeta.getEnvironment();
-		switch (env) {
-			case CLIENT:
-				return MinecraftEnvironmentSelector.CLIENT_ONLY;
-			case SERVER:
-				return MinecraftEnvironmentSelector.SERVER_ONLY;
-			case UNIVERSAL:
-				return MinecraftEnvironmentSelector.EITHER;
-			default:
-				throw new IllegalStateException("Unknown EnvType " + env);
-		}
+	public ModEnvironment environment() {
+		return fabricMeta.getEnvironment();
 	}
 
 	@Override

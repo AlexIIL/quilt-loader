@@ -5,13 +5,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import net.fabricmc.loader.api.metadata.ModEnvironment;
 import org.jetbrains.annotations.Nullable;
-import org.quiltmc.loader.api.LoaderValue;
-import org.quiltmc.loader.api.ModContributor;
-import org.quiltmc.loader.api.ModDependency;
-import org.quiltmc.loader.api.ModLicense;
-import org.quiltmc.loader.api.ModMetadata;
-import org.quiltmc.loader.api.Version;
+import org.quiltmc.loader.api.*;
 
 final class V1ModMetadataImpl implements InternalModMetadata {
 	private final JsonLoaderValue.ObjectImpl root;
@@ -39,7 +35,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	/* Internal fields - to be moved to plugins */
 	private final Collection<MixinEntry> mixins;
 	private final Collection<String> accessWideners;
-	private final MinecraftEnvironmentSelector environment;
+	private final ModEnvironment environment;
 
 	V1ModMetadataImpl(
 			JsonLoaderValue.ObjectImpl root,
@@ -67,7 +63,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 			/* TODO: Move to plugins */
 			Collection<MixinEntry> mixins,
 			Collection<String> accessWideners,
-			MinecraftEnvironmentSelector environment
+			ModEnvironment environment
 			// TODO: Custom objects - long term
 	) {
 		this.root = root;
@@ -243,7 +239,7 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	}
 
 	@Override
-	public MinecraftEnvironmentSelector environment() {
-		return this.environment;
+	public ModEnvironment environment() {
+		return environment;
 	}
 }

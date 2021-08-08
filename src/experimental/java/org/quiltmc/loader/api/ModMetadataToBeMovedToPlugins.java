@@ -1,11 +1,9 @@
-package org.quiltmc.loader.impl.metadata.qmj;
+package org.quiltmc.loader.api;
 
 import java.util.Collection;
 
+import net.fabricmc.loader.api.metadata.ModEnvironment;
 import org.jetbrains.annotations.ApiStatus;
-import org.quiltmc.loader.api.ModMetadata;
-
-import net.fabricmc.api.EnvType;
 
 /**
  * Holder interface for all fields that should be moved to a loader plugin.
@@ -19,13 +17,13 @@ public interface ModMetadataToBeMovedToPlugins extends ModMetadata {
 
 	Collection<String> accessWideners();
 
-	MinecraftEnvironmentSelector environment();
+	ModEnvironment environment();
 
 	public static final class MixinEntry {
 		public final String path;
-		public final MinecraftEnvironmentSelector environment;
+		public final ModEnvironment environment;
 
-		public MixinEntry(String path, MinecraftEnvironmentSelector environment) {
+		public MixinEntry(String path, ModEnvironment environment) {
 			this.path = path;
 			this.environment = environment;
 		}

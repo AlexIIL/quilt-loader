@@ -349,7 +349,7 @@ public class QuiltLoaderImpl implements FabricLoader {
 			throw new ModResolutionException("Duplicate mod ID: " + meta.id() + "! (" + modMap.get(meta.id()).getOriginUrl().getFile() + ", " + originUrl.getFile() + ")");
 		}
 
-		if (!meta.environment().loadsIn(getEnvironmentType())) {
+		if (!meta.environment().matches(getEnvironmentType())) {
 			return;
 		}
 
