@@ -32,6 +32,8 @@ public interface ModDependency {
 	 * field here, and if it doesn't match the current envrionment, return true. */
 	boolean shouldIgnore();
 
+	boolean equals(Object other);
+	int hashCode();
 	/**
 	 * A mod dependency where there is only one condition that must be satisfied.
 	 */

@@ -18,12 +18,27 @@ package org.quiltmc.loader.impl.solver;
 
 import org.quiltmc.loader.api.ModDependency;
 
+import java.util.Objects;
+
 /** Used to indicate part of a {@link ModDependency} from quilt.mod.json. */
 public class QuiltModDepOption extends LoadOption {
 	public final ModDependency dep;
 
 	public QuiltModDepOption(ModDependency dep) {
 		this.dep = dep;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof QuiltModDepOption)) return false;
+		QuiltModDepOption that = (QuiltModDepOption) o;
+		return Objects.equals(dep, that.dep);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(dep);
 	}
 
 	@Override

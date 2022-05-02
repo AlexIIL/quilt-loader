@@ -19,6 +19,8 @@ package org.quiltmc.loader.impl.solver;
 import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.impl.metadata.qmj.ModProvided;
 
+import java.util.Objects;
+
 /**
  * A mod that is provided from the jar of a different mod.
  */
@@ -65,5 +67,19 @@ class ProvidedModOption extends ModLoadOption implements AliasedLoadOption {
 	@Override
 	public LoadOption getTarget() {
 		return getRoot();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof ProvidedModOption)) return false;
+		if (!super.equals(o)) return false;
+		ProvidedModOption that = (ProvidedModOption) o;
+		return Objects.equals(provider, that.provider) && Objects.equals(provided, that.provided);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), provider, provided);
 	}
 }

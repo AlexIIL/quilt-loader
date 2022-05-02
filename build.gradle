@@ -78,6 +78,9 @@ dependencies {
 	api 'net.fabricmc:access-widener:2.1.0'
 
 	api 'org.quiltmc:quilt-json5:1.0.1'
+	api 'org.jgrapht:jgrapht-core:1.5.1'
+	api 'org.jgrapht:jgrapht-ext:1.5.1'
+	api 'org.jgrapht:jgrapht-io:1.5.1'
 	include 'org.quiltmc:quilt-loader-sat4j:2.3.5.1'
 
 

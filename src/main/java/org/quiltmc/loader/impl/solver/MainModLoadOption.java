@@ -21,6 +21,8 @@ import net.fabricmc.loader.api.SemanticVersion;
 import org.quiltmc.loader.impl.discovery.ModCandidate;
 import org.quiltmc.loader.impl.metadata.FabricLoaderModMetadata;
 
+import java.util.Objects;
+
 class MainModLoadOption extends ModLoadOption {
 	/** Used to identify this {@link MainModLoadOption} against others with the same modid. A value of -1 indicates that
 	 * this is the only {@link LoadOption} for the given modid. */
@@ -54,5 +56,19 @@ class MainModLoadOption extends ModLoadOption {
 	@Override
 	MainModLoadOption getRoot() {
 		return this;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof MainModLoadOption)) return false;
+		if (!super.equals(o)) return false;
+		MainModLoadOption that = (MainModLoadOption) o;
+		return index == that.index;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), index);
 	}
 }

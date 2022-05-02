@@ -16,6 +16,8 @@
 
 package org.quiltmc.loader.impl.solver;
 
+import java.util.Objects;
+
 /** Used for the "inverse load" condition - if this is required by a {@link Rule} then it means the
  * {@link LoadOption} must not be loaded. */
 final class NegatedLoadOption extends LoadOption {
@@ -28,5 +30,18 @@ final class NegatedLoadOption extends LoadOption {
 	@Override
 	public String toString() {
 		return "NOT " + not;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof NegatedLoadOption)) return false;
+		NegatedLoadOption that = (NegatedLoadOption) o;
+		return Objects.equals(not, that.not);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(not);
 	}
 }

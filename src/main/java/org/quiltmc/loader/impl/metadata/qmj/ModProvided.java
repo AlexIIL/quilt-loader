@@ -18,6 +18,8 @@ package org.quiltmc.loader.impl.metadata.qmj;
 
 import org.quiltmc.loader.api.Version;
 
+import java.util.Objects;
+
 public class ModProvided {
 	public final String group;
 	public final String id;
@@ -32,5 +34,18 @@ public class ModProvided {
 	@Override
 	public String toString() {
 		return "ModProvided { " + group + ":" + id + " v " + version + " }";
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof ModProvided)) return false;
+		ModProvided that = (ModProvided) o;
+		return Objects.equals(group, that.group) && Objects.equals(id, that.id) && Objects.equals(version, that.version);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(group, id, version);
 	}
 }

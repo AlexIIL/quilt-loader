@@ -16,6 +16,7 @@
 
 package org.quiltmc.loader.impl.solver;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 
@@ -62,6 +63,6 @@ abstract class ModIdDefinition extends Rule {
 	@Deprecated
 	@Override
 	public Collection<? extends LoadOption> getNodesTo() {
-		return Collections.emptySet();
+		return Arrays.asList(sources());
 	}
 }

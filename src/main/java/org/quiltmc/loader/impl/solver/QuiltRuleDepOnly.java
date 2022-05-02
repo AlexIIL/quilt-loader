@@ -143,6 +143,9 @@ class QuiltRuleDepOnly extends QuiltRuleDep {
 
 	@Override
 	public Collection<? extends LoadOption> getNodesTo() {
+		if (allOptions.isEmpty()) {
+			return Collections.singleton(new QuiltModDepOption(publicDep));
+		}
 		return allOptions;
 	}
 
@@ -150,9 +153,9 @@ class QuiltRuleDepOnly extends QuiltRuleDep {
 	public void fallbackErrorDescription(StringBuilder errors) {
 
 		if (publicDep.optional()) {
-			errors.append("Optional depencency for ");
+			errors.append("Optional dependency for ");
 		} else {
-			errors.append("Depencency for ");
+			errors.append("Dependency for ");
 		}
 
 		errors.append(source);

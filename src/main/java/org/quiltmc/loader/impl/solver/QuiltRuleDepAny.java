@@ -101,7 +101,7 @@ public class QuiltRuleDepAny extends QuiltRuleDep {
 
 	@Override
 	public void fallbackErrorDescription(StringBuilder errors) {
-		errors.append("Dependancy for ");
+		errors.append("Dependency for ");
 		errors.append(source);
 		errors.append(" on any of: ");
 

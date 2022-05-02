@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.ModDependency;
@@ -69,6 +70,19 @@ final class ModDependencyImpl {
 		@Override
 		public String toString() {
 			return location;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) return true;
+			if (!(o instanceof CollectionImpl)) return false;
+			CollectionImpl onlies = (CollectionImpl) o;
+			return Objects.equals(location, onlies.location) && Objects.equals(conditions, onlies.conditions);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(location, conditions);
 		}
 	}
 
@@ -145,7 +159,20 @@ final class ModDependencyImpl {
 
 		@Override
 		public String toString() {
-			return location;
+			return this.location + ":" + this.id + ":" + this.constraints;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) return true;
+			if (!(o instanceof OnlyImpl)) return false;
+			OnlyImpl only = (OnlyImpl) o;
+			return optional == only.optional && Objects.equals(location, only.location) && Objects.equals(id, only.id) && Objects.equals(constraints, only.constraints) && Objects.equals(reason, only.reason) && Objects.equals(unless, only.unless);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(location, id, constraints, reason, optional, unless);
 		}
 	}
 }

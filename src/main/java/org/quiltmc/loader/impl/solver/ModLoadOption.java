@@ -22,6 +22,8 @@ import org.quiltmc.loader.impl.discovery.ModCandidate;
 import org.quiltmc.loader.impl.discovery.ModResolver;
 import org.quiltmc.loader.impl.metadata.qmj.FabricModMetadataWrapper;
 
+import java.util.Objects;
+
 abstract class ModLoadOption extends LoadOption {
 	final ModCandidate candidate;
 
@@ -67,4 +69,17 @@ abstract class ModLoadOption extends LoadOption {
 	abstract String getSpecificInfo();
 
 	abstract MainModLoadOption getRoot();
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof ModLoadOption)) return false;
+		ModLoadOption that = (ModLoadOption) o;
+		return Objects.equals(candidate, that.candidate);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(candidate);
+	}
 }

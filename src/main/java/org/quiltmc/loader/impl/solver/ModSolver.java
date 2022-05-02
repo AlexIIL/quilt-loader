@@ -16,8 +16,13 @@
 
 package org.quiltmc.loader.impl.solver;
 
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +35,19 @@ import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 
+import com.mxgraph.layout.hierarchical.mxHierarchicalLayout;
+import com.mxgraph.layout.mxCircleLayout;
+
+import com.mxgraph.layout.mxIGraphLayout;
+
+import com.mxgraph.layout.mxStackLayout;
+import com.mxgraph.util.mxCellRenderer;
+
+import net.fabricmc.loader.api.metadata.version.VersionPredicate;
+
+import org.jgrapht.ext.JGraphXAdapter;
+import org.jgrapht.graph.DefaultEdge;
+import org.jgrapht.nio.json.JSONExporter;
 import org.quiltmc.loader.impl.QuiltLoaderImpl;
 import org.quiltmc.loader.impl.discovery.ModCandidate;
 import org.quiltmc.loader.impl.discovery.ModCandidateSet;
@@ -47,6 +65,10 @@ import org.quiltmc.loader.util.sat4j.pb.tools.INegator;
 import org.quiltmc.loader.util.sat4j.specs.TimeoutException;
 
 import net.fabricmc.loader.api.metadata.ModDependency;
+
+import org.quiltmc.loader.util.sat4j.tools.FileBasedVisualizationTool;
+
+import javax.imageio.ImageIO;
 
 public final class ModSolver {
 	static final boolean DEBUG_PRINT_STATE = Boolean.getBoolean(SystemProperties.DEBUG_MOD_RESOLVING);
@@ -200,7 +222,7 @@ public final class ModSolver {
 		}
 
 		// Resolving
-
+		ErrorExplainer explainer = new ErrorExplainer();
 		try {
 			while (!sat.hasSolution()) {
 
@@ -237,7 +259,7 @@ public final class ModSolver {
 				 * trying to fix problems. (For example downloading a mod should process all of the
 				 * dependencies, provides, etc of that mod related to all others). 
 				 */
-
+				explainer.addError(roots, causes);
 				ModSolvingException ex = describeError(roots, causes);
 				if (ex == null) {
 					ex = fallbackErrorDescription(roots, causes);
@@ -249,7 +271,7 @@ public final class ModSolver {
 					break;
 				} else {
 
-					boolean removedAny = blameSingleRule(sat, causes);
+					boolean removedAny = blameSingleRule(sat, roots, causes);
 
 					// If that failed... stop finding more errors
 					if (!removedAny) {
@@ -259,6 +281,22 @@ public final class ModSolver {
 			}
 
 			if (!errors.isEmpty()) {
+				File imgFile = new File("error.png");
+				try {
+					imgFile.createNewFile();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				JGraphXAdapter<LoadOption, DefaultEdge> graphAdapter = new JGraphXAdapter<>(explainer.graph);
+				graphAdapter.setGridSize(1000);
+				mxHierarchicalLayout layout = new mxHierarchicalLayout(graphAdapter);
+				layout.execute(graphAdapter.getDefaultParent());
+				BufferedImage image = mxCellRenderer.createBufferedImage(graphAdapter, null, 1, Color.WHITE, true, null);
+				try {
+					ImageIO.write(image, "png", imgFile);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 				if (errors.size() == 1) {
 					throw errors.get(0);
 				}
@@ -337,13 +375,10 @@ public final class ModSolver {
 		}
 		extraResults = Collections.unmodifiableMap(extraResults);
 
-		// TODO: Warn on suspiciously similar versions!
-
 		return new ModSolveResult(resultingModMap, providedModMap, extraResults);
 	}
 
-	private boolean blameSingleRule(Sat4jWrapper sat, List<Rule> causes) {
-
+	private boolean blameSingleRule(Sat4jWrapper sat, Map<MainModLoadOption, MandatoryModIdDefinition> map, List<Rule> causes) {
 		// Remove dependencies and conflicts first
 		for (Rule link : causes) {
 

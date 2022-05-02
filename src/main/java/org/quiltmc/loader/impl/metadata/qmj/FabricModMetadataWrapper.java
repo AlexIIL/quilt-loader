@@ -198,41 +198,54 @@ public class FabricModMetadataWrapper implements InternalModMetadata {
 				} else {
 					for (VersionPredicate.PredicateTerm term : predicate.getTerms()) {
 						VersionConstraint.Type type = convertOperator(term.getOperator());
-						constraints.add(new VersionConstraint() {
-							@Override
-							public String version() {
-								return term.getReferenceVersion().getFriendlyString();
-							}
-	
-							@Override
-							public Type type() {
-								return type;
-							}
-	
-							@Override
-							public boolean matches(Version version) {
-								if (type() == Type.ANY) {
-									return true;
-								}
-	
-								net.fabricmc.loader.api.Version fVersion;
-	
-								try {
-									// fabric's semantic versioning is not spec-compliant (it adds arbitrary amounts of dot-separated versions)
-									// so we can't use version.isSemantic for conversion
-									fVersion = new FabricSemanticVersionImpl(version.raw(), false);
-								} catch (VersionParsingException ignored) {
-									fVersion = new StringVersion(version.raw());
-								}
-								return ((VersionPredicate)term).test(fVersion) || // All PredicateTerms seem to be VersionPredicates in their own right
-										version.raw().equals("${version}") && FabricLoader.getInstance().isDevelopmentEnvironment();
-							}
-	
-							@Override
-							public String toString() {
-								return type.prefix() + version();
-							}
-						});
+						constraints.add(new VersionConstraintImpl(term.getReferenceVersion().getFriendlyString(), type));
+//						constraints.add(new VersionConstraint() {
+//							@Override
+//							public String version() {
+//								return term.getReferenceVersion().getFriendlyString();
+//							}
+//
+//							@Override
+//							public Type type() {
+//								return type;
+//							}
+//
+//							@Override
+//							public boolean equals(Object o) {
+//								if (this == o) return true;
+//								if (o == null || getClass() != o.getClass()) return false;
+//								 that = (VersionConstraintImpl) o;
+//								return version.equals(that.version) && type == that.type;
+//							}
+//
+//							@Override
+//							public int hashCode() {
+//								return Objects.hash(this.version, this.type);
+//							}
+//							@Override
+//							public boolean matches(Version version) {
+//								if (type() == Type.ANY) {
+//									return true;
+//								}
+//
+//								net.fabricmc.loader.api.Version fVersion;
+//
+//								try {
+//									// fabric's semantic versioning is not spec-compliant (it adds arbitrary amounts of dot-separated versions)
+//									// so we can't use version.isSemantic for conversion
+//									fVersion = new FabricSemanticVersionImpl(version.raw(), false);
+//								} catch (VersionParsingException ignored) {
+//									fVersion = new StringVersion(version.raw());
+//								}
+//								return ((VersionPredicate)term).test(fVersion) || // All PredicateTerms seem to be VersionPredicates in their own right
+//										version.raw().equals("${version}") && FabricLoader.getInstance().isDevelopmentEnvironment();
+//							}
+//
+//							@Override
+//							public String toString() {
+//								return type.prefix() + version();
+//							}
+//						});
 					}
 				}
 			}
