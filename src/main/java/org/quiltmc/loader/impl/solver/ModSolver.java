@@ -274,7 +274,7 @@ public final class ModSolver {
 
 			for (BufferedImage img2 : images) {
 				g.drawImage(img2, 0, h, null);
-				h += 1 + img2.getHeight();
+				h += 2 + img2.getHeight();
 			}
 
 			File imgFile = new File("error.png");
