@@ -21,9 +21,9 @@ public final class ErrorExplainer {
 
 				for (LoadOption parent : cause.getNodesFrom()) {
 					graph.addVertex(parent);
-//					if (!option.equals(parent)) {
-//						graph.addEdge(parent, option);
-//					}
+					if (!option.equals(parent)) {
+						graph.addEdge(parent, option);
+					}
 
 				}
 				if (cause.isNode()) {
