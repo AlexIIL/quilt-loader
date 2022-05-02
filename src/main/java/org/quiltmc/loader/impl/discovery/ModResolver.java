@@ -93,7 +93,7 @@ public class ModResolver {
 	}
 
 	public static String getReadablePath(QuiltLoaderImpl loader, ModCandidate c) {
-		return getReadablePath(loader.getGameDir(), c.getOriginPath());
+		return "{path}";//getReadablePath(loader.getGameDir(), c.getOriginPath());
 	}
 
 	public String getReadablePath(Path path) {

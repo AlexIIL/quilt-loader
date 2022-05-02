@@ -143,9 +143,6 @@ class QuiltRuleDepOnly extends QuiltRuleDep {
 
 	@Override
 	public Collection<? extends LoadOption> getNodesTo() {
-		if (allOptions.isEmpty()) {
-			return Collections.singleton(new QuiltModDepOption(publicDep));
-		}
 		return allOptions;
 	}
 

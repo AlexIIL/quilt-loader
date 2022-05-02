@@ -243,6 +243,16 @@ final class ModResolvingTests {
 		resolveErrorSet("multi_breaks");
 	}
 
+	@Test
+	public void missingDepError() {
+		resolveErrorSet("missing_dep");
+	}
+
+	@Test
+	public void missingMods() {
+		resolveErrorSet("../../../../../../run/mods");
+	}
+
 	private static void resolveErrorSet(String subpath) {
 		try {
 			ModSolveResult result = resolveModSet("error", subpath);
