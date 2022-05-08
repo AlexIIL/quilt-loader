@@ -386,6 +386,10 @@ public final class ModSolver {
 
 	private boolean blameSingleRule(Sat4jWrapper sat, Map<MainModLoadOption, MandatoryModIdDefinition> map, List<
 		Rule> causes) {
+		for (MandatoryModIdDefinition def : map.values()) {
+			sat.removeRule(def);
+			return true;
+		}
 		// Remove dependencies and conflicts first
 		for (Rule link : causes) {
 
@@ -397,12 +401,15 @@ public final class ModSolver {
 				}
 			}
 
+			System.out.println("Removing rule " + link);
+
 			sat.removeRule(link);
 			return true;
 		}
 
 		// If that failed... try removing anything else
 		for (Rule link : causes) {
+			System.out.println("Removing rule " + link);
 			sat.removeRule(link);
 			return true;
 		}
