@@ -182,6 +182,7 @@ public final class QuiltJsonGui {
 	public final String mainText;
 	private final List<Map<Integer, BufferedImage>> customIcons = new ArrayList<>();
 
+	public String messagesTabName = "_MESSAGES_";
 	public final List<QuiltJsonGuiMessage> messages = new ArrayList<>();
 	public final List<QuiltJsonGuiTreeTab> tabs = new ArrayList<>();
 	public final List<QuiltJsonButton> buttons = new ArrayList<>();
@@ -221,6 +222,8 @@ public final class QuiltJsonGui {
 		expectName(reader, "mainText");
 		mainText = reader.nextString();
 
+		expectName(reader, "message_tab_name");
+		messagesTabName = reader.nextString();
 		expectName(reader, "messages");
 		reader.beginArray();
 		while (reader.peek() != JsonToken.END_ARRAY) {
@@ -250,6 +253,7 @@ public final class QuiltJsonGui {
 		writer.beginObject();
 		writer.name("title").value(title);
 		writer.name("mainText").value(mainText);
+		writer.name("message_tab_name").value(messagesTabName);
 		writer.name("messages").beginArray();
 		for (QuiltJsonGuiMessage sub : messages) {
 			sub.write(writer);

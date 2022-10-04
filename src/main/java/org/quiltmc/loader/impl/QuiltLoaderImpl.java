@@ -366,7 +366,7 @@ public final class QuiltLoaderImpl {
 		}
 
 		QuiltJsonGui tree = new QuiltJsonGui("Quilt Loader", null);
-
+		tree.messagesTabName = Text.translate("tab.messages").toString();
 		for (QuiltPluginErrorImpl error : plugins.getErrors()) {
 			tree.messages.add(error.toGuiMessage(tree));
 		}

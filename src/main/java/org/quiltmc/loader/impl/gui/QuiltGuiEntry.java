@@ -87,7 +87,8 @@ public final class QuiltGuiEntry {
 	}
 
 	private static void openWindow(QuiltJsonGui tree, boolean shouldWait) throws Exception {
-		QuiltMainWindow.open(tree, shouldWait);
+		QuiltMainDisplay.open(tree, shouldWait);
+//		QuiltMainWindow.open(tree, shouldWait);
 	}
 
 	/** @param exitAfter If true then this will call {@link System#exit(int)} after showing the gui, otherwise this will

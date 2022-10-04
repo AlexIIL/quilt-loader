@@ -200,7 +200,7 @@ class SolverErrorHelper {
 					Object[] rootModDescArgs = { rootModName, rootModPath };
 					error.appendDescription(Text.translate("info.root_mod_loaded_from", rootModDescArgs));
 
-					error.addFileViewButton(Text.translate("button.view_file"), rootModPath);
+					error.addFileViewButton(Text.translate("button.view_file", rootModPath.getFileName()), rootModPath);
 
 					StringBuilder report = new StringBuilder(rootModName);
 					if (transitive) {
@@ -215,6 +215,10 @@ class SolverErrorHelper {
 					report.append(getDepName(dep));
 					report.append(", which is missing!");
 					error.appendReportText(report.toString(), rootModName + " is loaded from " + rootModPath);
+
+					error.appendAdditionalInformation(
+						Text.of("Mods depend on specific versions of minecraft dammit."),
+						Text.of("This italic text is to show more information, since I can't get expandable sections to work."));
 
 					return true;
 				} else {

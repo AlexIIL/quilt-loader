@@ -50,6 +50,7 @@ import javax.swing.BoxLayout;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -153,7 +154,7 @@ class QuiltMainWindow {
 			contentPane.add(tabs, BorderLayout.CENTER);
 
 			if (!tree.messages.isEmpty()) {
-				tabs.addTab("Messages", createMessagesPanel(icons, tree.messages));
+				tabs.addTab(tree.messagesTabName, createMessagesPanel(icons, tree.messages));
 			}
 
 			for (QuiltJsonGuiTreeTab tab : tree.tabs) {
@@ -198,7 +199,7 @@ class QuiltMainWindow {
 		window.requestFocus();
 	}
 
-	private static JScrollPane createMessagesPanel(IconSet icons, List<QuiltJsonGuiMessage> messages) {
+	private static JComponent createMessagesPanel(IconSet icons, List<QuiltJsonGuiMessage> messages) {
 		JPanel panel = new JPanel();
 		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
@@ -206,23 +207,24 @@ class QuiltMainWindow {
 			panel.add(createMessagePanel(icons, message));
 		}
 
-		return new JScrollPane(panel);
+		return panel;
 	}
 
 	private static JPanel createMessagePanel(IconSet icons, QuiltJsonGuiMessage message) {
 		JPanel panel = new JPanel();
+		panel.setBorder(BorderFactory.createEtchedBorder());
 		panel.setAlignmentX(0);
-		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+//		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
 		JPanel top = new JPanel();
-		top.setLayout(new BoxLayout(top, BoxLayout.X_AXIS));
+//		top.setLayout(new BoxLayout(top, BoxLayout.X_AXIS));
 		panel.add(top);
 
 		top.add(new JLabel(icons.get(new IconInfo("level_error"))));
 		top.add(new JLabel(message.title));
 
 		for (String desc : message.description) {
-			panel.add(new JLabel(desc));
+			panel.add(new JLabel("<html><body style='width: 100%'>" + desc.replace("<", "&lt;")));
 		}
 
 		// TODO: The rest!
@@ -264,7 +266,7 @@ class QuiltMainWindow {
 		return panel;
 	}
 
-	private static BufferedImage loadImage(String str) throws IOException {
+	static BufferedImage loadImage(String str) throws IOException {
 		return ImageIO.read(loadStream(str));
 	}
 
@@ -347,15 +349,19 @@ class QuiltMainWindow {
 	}
 
 	private static Icon loadIcon(IconInfo info, int scale) throws IOException {
+		return new ImageIcon(generateIcon(info, scale));
+	}
+
+	static BufferedImage generateIcon(IconInfo info, int scale) throws IOException {
 		BufferedImage img = new BufferedImage(scale, scale, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D imgG2d = img.createGraphics();
 
-		BufferedImage main = loadImage("/ui/icon/" + info.mainPath + "_x" + scale + ".png");
-		assert main.getWidth() == scale;
-		assert main.getHeight() == scale;
-		imgG2d.drawImage(main, null, 0, 0);
+		int fileScale = scale > 16 ? 16 : scale;
 
-		final int[][] coords = { { 0, 8 }, { 8, 8 }, { 8, 0 } };
+		BufferedImage main = loadImage("/ui/icon/" + info.mainPath + "_x" + fileScale + ".png");
+		imgG2d.drawImage(main, 0, 0, scale, scale, null);
+
+		final int[][] coords = { { 0, scale / 2 }, { scale / 2, scale / 2 }, { scale / 2, 0 } };
 
 		for (int i = 0; i < info.decor.length; i++) {
 			String decor = info.decor[i];
@@ -364,13 +370,10 @@ class QuiltMainWindow {
 				continue;
 			}
 
-			BufferedImage decorImg = loadImage("/ui/icon/decoration/" + decor + "_x" + (scale / 2) + ".png");
-			assert decorImg.getWidth() == scale / 2;
-			assert decorImg.getHeight() == scale / 2;
-			imgG2d.drawImage(decorImg, null, coords[i][0], coords[i][1]);
+			BufferedImage decorImg = loadImage("/ui/icon/decoration/" + decor + "_x" + (fileScale / 2) + ".png");
+			imgG2d.drawImage(decorImg, coords[i][0], coords[i][1], scale / 2, scale / 2, null);
 		}
-
-		return new ImageIcon(img);
+		return img;
 	}
 
 	static final class IconInfo {
@@ -395,6 +398,22 @@ class QuiltMainWindow {
 			} else {
 				hash = mainPath.hashCode() * 31 + Arrays.hashCode(decor);
 			}
+		}
+
+		public static IconInfo parse(String desc) {
+			String[] split = desc.split("\\+");
+			if (split.length == 0 || (split.length == 1 && split[0].isEmpty())) {
+				return new IconInfo("missing");
+			}
+
+			List<String> decors = new ArrayList<>();
+			// The warning gap
+			decors.add(null);
+			for (int i = 1; i < split.length && i < 3; i++) {
+				decors.add(split[i]);
+			}
+
+			return new IconInfo(split[0], decors.toArray(new String[0]));
 		}
 
 		public static IconInfo fromNode(QuiltStatusNode node) {

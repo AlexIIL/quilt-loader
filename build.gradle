@@ -92,6 +92,8 @@ dependencies {
 	shadow 'com.electronwill.night-config:core:3.6.5'
 	shadow 'com.electronwill.night-config:toml:3.6.5'
 
+	api 'org.eclipse.platform:org.eclipse.swt.gtk.linux.x86_64:3.121.0'
+
 	testCompileOnly 'org.jetbrains:annotations:23.0.0'
 
 	// Unit testing
