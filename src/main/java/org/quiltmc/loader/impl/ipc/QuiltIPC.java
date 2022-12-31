@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 import org.quiltmc.loader.api.LoaderValue;
 import org.quiltmc.loader.api.plugin.LoaderValueFactory;
 
-/** Client entry point for opening communication to a local server. */
+/** Client entry point for opening communication to a local server. Fairly low level -  */
 public class QuiltIPC {
 
 	private static final String SYS_PROP = "quiltmc.ipc.is_forked_client";

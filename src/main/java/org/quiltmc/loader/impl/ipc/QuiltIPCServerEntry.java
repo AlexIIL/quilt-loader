@@ -7,7 +7,10 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 
-import org.quiltmc.loader.api.plugin.LoaderValueFactory;
+import org.quiltmc.loader.api.LoaderValue;
+import org.quiltmc.loader.api.LoaderValue.LObject;
+import org.quiltmc.loader.api.LoaderValue.LType;
+import org.quiltmc.loader.impl.gui.QuiltProgressWindow;
 
 public class QuiltIPCServerEntry {
 	public static void main(String[] args) {
@@ -51,17 +54,30 @@ public class QuiltIPCServerEntry {
 		portFile.deleteOnExit();
 		readyFile.deleteOnExit();
 		Socket connection = socket.accept();
-		QuiltIPC ipc = new QuiltIPC(connection, true, value -> {
-			System.out.println("SV: " + value + " '" + value.asString() + "'");
-		});
-		for (int i = 0; i < 10; i++) {
-			ipc.send(LoaderValueFactory.getFactory().string("Hello " + i));
+		new QuiltIPCServerEntry(connection);
+	}
+
+	final QuiltProgressWindow progress;
+	final QuiltIPC ipc;
+
+	private QuiltIPCServerEntry(Socket connection) {
+		progress = new QuiltProgressWindow();
+		ipc = new QuiltIPC(connection, false, this::handleMessage);
+	}
+
+	private void handleMessage(LoaderValue value) {
+		if (value.type() == LType.NULL) {
+			System.exit(0);
+			return;
 		}
-		try {
-			Thread.sleep(10000);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+		LObject obj = value.asObject();
+		LoaderValue type = obj.get("__TYPE");
+		if ("QuiltProgressUpdate".equals(type.asString())) {
+			String state = obj.get("state").asString();
+			int percent = obj.get("percent").asNumber().intValue();
+			progress.setProgress(state, percent);
+		} else {
+			throw new Error("Wrong type! " + value);
 		}
-		System.exit(0);
 	}
 }

@@ -16,26 +16,6 @@
 
 package org.quiltmc.loader.impl.launch.knot;
 
-import net.fabricmc.api.EnvType;
-import org.quiltmc.loader.impl.util.LoaderUtil;
-import org.objectweb.asm.ClassReader;
-import org.quiltmc.loader.api.ModContainer;
-import org.quiltmc.loader.api.minecraft.ClientOnly;
-import org.quiltmc.loader.api.minecraft.DedicatedServerOnly;
-import org.quiltmc.loader.impl.QuiltLoaderImpl;
-import org.quiltmc.loader.impl.game.GameProvider;
-import org.quiltmc.loader.impl.launch.common.QuiltCodeSource;
-import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
-import org.quiltmc.loader.impl.transformer.PackageEnvironmentStrippingData;
-import org.quiltmc.loader.impl.transformer.QuiltTransformer;
-import org.quiltmc.loader.impl.util.FileSystemUtil;
-import org.quiltmc.loader.impl.util.ManifestUtil;
-import org.quiltmc.loader.impl.util.UrlConversionException;
-import org.quiltmc.loader.impl.util.UrlUtil;
-import org.quiltmc.loader.impl.util.log.Log;
-import org.quiltmc.loader.impl.util.log.LogCategory;
-import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,6 +34,33 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.Manifest;
+
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.TypePath;
+import org.quiltmc.loader.MinecraftInitWindowHelper;
+import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.loader.impl.QuiltLoaderImpl;
+import org.quiltmc.loader.impl.game.GameProvider;
+import org.quiltmc.loader.impl.launch.common.QuiltCodeSource;
+import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
+import org.quiltmc.loader.impl.transformer.PackageEnvironmentStrippingData;
+import org.quiltmc.loader.impl.transformer.QuiltTransformer;
+import org.quiltmc.loader.impl.util.FileSystemUtil;
+import org.quiltmc.loader.impl.util.LoaderUtil;
+import org.quiltmc.loader.impl.util.ManifestUtil;
+import org.quiltmc.loader.impl.util.UrlConversionException;
+import org.quiltmc.loader.impl.util.UrlUtil;
+import org.quiltmc.loader.impl.util.log.Log;
+import org.quiltmc.loader.impl.util.log.LogCategory;
+import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
+
+import net.fabricmc.api.EnvType;
 
 class KnotClassDelegate {
 	static class Metadata {
@@ -201,6 +208,180 @@ class KnotClassDelegate {
 					if (pkg == null) throw e; // still not defined?
 				}
 			}
+		}
+
+		if ("net.minecraft.client.MinecraftClient".equals(name)) {
+			ClassReader cr = new ClassReader(input);
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+			cr.accept(new ClassVisitor(QuiltLoaderImpl.ASM_VERSION, cw) {
+				@Override
+				public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
+					String[] exceptions) {
+
+					MethodVisitor mth = super.visitMethod(access, name, descriptor, signature, exceptions);
+
+					if ("<init>".equals(name)) {
+						return new MethodVisitor(api, mth) {
+							@Override
+							public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+								super.visitFieldInsn(opcode, owner, name, descriptor);
+								emit();
+							}
+
+							@Override
+							public void visitIincInsn(int varIndex, int increment) {
+								super.visitIincInsn(varIndex, increment);
+								emit();
+							}
+
+							@Override
+							public void visitInsn(int opcode) {
+								super.visitInsn(opcode);
+								emit();
+							}
+
+							@Override
+							public void visitIntInsn(int opcode, int operand) {
+								super.visitIntInsn(opcode, operand);
+								emit();
+							}
+
+							@Override
+							public void visitVarInsn(int opcode, int varIndex) {
+								super.visitVarInsn(opcode, varIndex);
+								emit();
+							}
+
+							@Override
+							public void visitTypeInsn(int opcode, String type) {
+								super.visitTypeInsn(opcode, type);
+								emit();
+							}
+
+							@Override
+							public void visitMethodInsn(int opcode, String owner, String name, String descriptor,
+								boolean isInterface) {
+
+								super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+								emit();
+							}
+
+							@Override
+							public void visitInvokeDynamicInsn(String name, String descriptor,
+								Handle bootstrapMethodHandle, Object... bootstrapMethodArguments) {
+								super.visitInvokeDynamicInsn(name, descriptor, bootstrapMethodHandle, bootstrapMethodArguments);
+								emit();
+							}
+
+							@Override
+							public void visitLdcInsn(Object value) {
+								super.visitLdcInsn(value);
+								emit();
+							}
+
+							@Override
+							public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
+								super.visitMultiANewArrayInsn(descriptor, numDimensions);
+								emit();
+							}
+
+							private void emit() {
+//								MinecraftInitWindowHelper.count++;
+								super.visitMethodInsn(Opcodes.INVOKESTATIC, "org/quiltmc/loader/MinecraftInitWindowHelper", "insn", "()V", false);
+							}
+						};
+					}
+
+					return mth;
+				}
+			}, 0);
+			input = cw.toByteArray();
+		} else if ("net.minecraft.client.main.Main".equals(name)) {
+			ClassReader cr = new ClassReader(input);
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+			cr.accept(new ClassVisitor(QuiltLoaderImpl.ASM_VERSION, cw) {
+				@Override
+				public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
+					String[] exceptions) {
+
+					MethodVisitor mth = super.visitMethod(access, name, descriptor, signature, exceptions);
+
+					if ("main".equals(name)) {
+						return new MethodVisitor(api, mth) {
+							@Override
+							public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+								super.visitFieldInsn(opcode, owner, name, descriptor);
+								emit();
+							}
+
+							@Override
+							public void visitIincInsn(int varIndex, int increment) {
+								super.visitIincInsn(varIndex, increment);
+								emit();
+							}
+
+							@Override
+							public void visitInsn(int opcode) {
+								super.visitInsn(opcode);
+								emit();
+							}
+
+							@Override
+							public void visitIntInsn(int opcode, int operand) {
+								super.visitIntInsn(opcode, operand);
+								emit();
+							}
+
+							@Override
+							public void visitVarInsn(int opcode, int varIndex) {
+								super.visitVarInsn(opcode, varIndex);
+								emit();
+							}
+
+							@Override
+							public void visitTypeInsn(int opcode, String type) {
+								super.visitTypeInsn(opcode, type);
+								emit();
+							}
+
+							@Override
+							public void visitMethodInsn(int opcode, String owner, String name, String descriptor,
+								boolean isInterface) {
+
+								super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+								emit();
+							}
+
+							@Override
+							public void visitInvokeDynamicInsn(String name, String descriptor,
+								Handle bootstrapMethodHandle, Object... bootstrapMethodArguments) {
+								super.visitInvokeDynamicInsn(name, descriptor, bootstrapMethodHandle, bootstrapMethodArguments);
+								emit();
+							}
+
+							@Override
+							public void visitLdcInsn(Object value) {
+								super.visitLdcInsn(value);
+								emit();
+							}
+
+							@Override
+							public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
+								super.visitMultiANewArrayInsn(descriptor, numDimensions);
+								emit();
+							}
+
+							private void emit() {
+//								MinecraftInitWindowHelper.countMain++;
+								super.visitMethodInsn(Opcodes.INVOKESTATIC, "org/quiltmc/loader/MinecraftInitWindowHelper", "insnMain", "()V", false);
+							}
+						};
+					}
+
+					return mth;
+				}
+			}, 0);
+			input = cw.toByteArray();
 		}
 
 		return itf.defineClassFwd(name, input, 0, input.length, metadata.codeSource);

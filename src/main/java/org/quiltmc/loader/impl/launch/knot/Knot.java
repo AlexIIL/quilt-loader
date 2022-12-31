@@ -24,6 +24,7 @@ import org.quiltmc.loader.impl.QuiltLoaderImpl;
 import org.quiltmc.loader.impl.config.QuiltConfigImpl;
 import org.quiltmc.loader.impl.entrypoint.EntrypointUtils;
 import org.quiltmc.loader.impl.game.GameProvider;
+import org.quiltmc.loader.impl.ipc.QuiltRemoteWindowHelper;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
 import org.quiltmc.loader.impl.launch.common.QuiltMixinBootstrap;
 import org.quiltmc.loader.impl.util.SystemProperties;
@@ -85,6 +86,9 @@ public final class Knot extends QuiltLauncherBase {
 	}
 
 	protected ClassLoader init(String[] args) {
+
+		QuiltRemoteWindowHelper.sendProgressUpdate("Loading...", 1);
+
 		setProperties(properties);
 
 		// configure fabric vars
@@ -122,6 +126,8 @@ public final class Knot extends QuiltLauncherBase {
 			classPath.add(path);
 		}
 
+		QuiltRemoteWindowHelper.sendProgressUpdate("Getting GameProvider...", 2);
+
 		provider = createGameProvider(args);
 		Log.info(LogCategory.GAME_PROVIDER, "Loading %s %s with Quilt Loader %s", provider.getGameName(), provider.getRawGameVersion(), QuiltLoaderImpl.VERSION);
 
@@ -133,23 +139,29 @@ public final class Knot extends QuiltLauncherBase {
 		classLoader = useCompatibility ? new KnotCompatibilityClassLoader(isDevelopment(), envType, provider) : new KnotClassLoader(isDevelopment(), envType, provider);
 		ClassLoader cl = (ClassLoader) classLoader;
 
+		QuiltRemoteWindowHelper.sendProgressUpdate("Initialising GameProvider...", 3);
+
 		provider.initialize(this);
 
 		Thread.currentThread().setContextClassLoader(cl);
 
 		QuiltLoaderImpl loader = QuiltLoaderImpl.INSTANCE;
 		loader.setGameProvider(provider);
+		QuiltRemoteWindowHelper.sendProgressUpdate("Loading Mods...", 4);
 		loader.load();
+		QuiltRemoteWindowHelper.sendProgressUpdate("Finishing Mods...", 20);
 		loader.freeze();
 
 		QuiltLoaderImpl.INSTANCE.loadAccessWideners();
 
+		QuiltRemoteWindowHelper.sendProgressUpdate("Starting Mixin", 21);
 		MixinBootstrap.init();
 		QuiltMixinBootstrap.init(getEnvironmentType(), loader);
 		QuiltLauncherBase.finishMixinBootstrapping();
 
 		classLoader.getDelegate().initializeTransformers();
 
+		QuiltRemoteWindowHelper.sendProgressUpdate("Finishing classpath", 22);
 		provider.unlockClassPath(this);
 		unlocked = true;
 
@@ -165,7 +177,9 @@ public final class Knot extends QuiltLauncherBase {
 			Log.warn(LogCategory.KNOT, "If you get a 'LinkageError' of 'attempted duplicated * definition' after this then this error is the cause!", cnfe);
 		}
 
+		QuiltRemoteWindowHelper.sendProgressUpdate("Invoking PreLaunch", 40);
 		loader.invokePreLaunch();
+		QuiltRemoteWindowHelper.sendProgressUpdate("Starting Minecraft", 49);
 
 		return cl;
 	}
