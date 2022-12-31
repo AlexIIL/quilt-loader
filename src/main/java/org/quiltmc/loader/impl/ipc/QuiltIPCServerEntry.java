@@ -62,7 +62,7 @@ public class QuiltIPCServerEntry {
 
 	private QuiltIPCServerEntry(Socket connection) {
 		progress = new QuiltProgressWindow();
-		ipc = new QuiltIPC(connection, false, this::handleMessage);
+		ipc = new QuiltIPC(connection, this::handleMessage);
 	}
 
 	private void handleMessage(LoaderValue value) {

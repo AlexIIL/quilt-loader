@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 import org.quiltmc.loader.api.LoaderValue;
 import org.quiltmc.loader.api.plugin.LoaderValueFactory;
 
-/** Client entry point for opening communication to a local server. Fairly low level -  */
+/** Client entry point for opening communication to a local server. Fairly low level - */
 public class QuiltIPC {
 
 	private static final String SYS_PROP = "quiltmc.ipc.is_forked_client";
@@ -34,6 +34,8 @@ public class QuiltIPC {
 
 		File portFile = new File(medium.toString() + ".port");
 		File readyFile = new File(medium.toString() + ".ready");
+
+		QuiltIPC ipc = new QuiltIPC(handler);
 
 		if (start) {
 			if (portFile.exists()) {
@@ -56,27 +58,24 @@ public class QuiltIPC {
 			pb.redirectError(Redirect.INHERIT);
 			pb.redirectOutput(Redirect.INHERIT);
 
-			pb.start();
+			Process process = pb.start();
 
-			for (int cycle = 0; cycle < 10; cycle++) {
-				if (readyFile.isFile()) {
-					break;
-				}
-				try {
-					Thread.sleep((cycle + 1) * (cycle + 1));
-				} catch (InterruptedException ignored) {}
-			}
+			ipc.sender = ipc.new ConnectingSender(portFile, readyFile, process);
+		} else {
+			ipc.sender = ipc.new ReadySender(readPort(portFile));
 		}
 
-		int port;
+		return ipc;
+	}
 
+	private static int readPort(File portFile) throws IOException {
 		try (FileInputStream fis = new FileInputStream(portFile)) {
 			byte[] bytes = new byte[4];
 			int index = 0;
 			while (true) {
 				int read = fis.read(bytes, index, bytes.length - index);
 				if (read < 0) {
-					throw new IOException("Didn't find the port in " + medium);
+					throw new IOException("Didn't find the port in " + portFile);
 				}
 				index += read;
 				if (index >= 4) {
@@ -84,100 +83,172 @@ public class QuiltIPC {
 				}
 			}
 
-			port = (bytes[0] & 0xFF) << 24//
+			return (bytes[0] & 0xFF) << 24//
 				| (bytes[1] & 0xFF) << 16//
 				| (bytes[2] & 0xFF) << 8//
 				| (bytes[3] & 0xFF) << 0;
 		}
-
-		return new QuiltIPC(new Socket(InetAddress.getByName(null), port), false, handler);
 	}
 
-	final Socket socket;
-	final Thread writer, reader;
-	final Executor handler;
 	final Consumer<LoaderValue> msgHandler;
 
-	final BlockingQueue<LoaderValue> writerQueue;
+	/** Set to null if we fail to connect. */
+	volatile BlockingQueue<LoaderValue> writerQueue;
+
+	Sender sender;
 
 	volatile Throwable exception;
 
-	QuiltIPC(Socket socket, boolean isServer, Consumer<LoaderValue> msgHandler) {
-		// TODO: Remove the "isServer" argument, since the server will instead open a swing GUI.
-		this.socket = socket;
+	QuiltIPC(Consumer<LoaderValue> msgHandler) {
 		this.msgHandler = msgHandler;
 
 		writerQueue = new LinkedBlockingQueue<>();
-		handler = Executors.newSingleThreadExecutor(new ThreadFactory() {
-			final AtomicInteger number = new AtomicInteger();
+	}
 
-			@Override
-			public Thread newThread(Runnable r) {
-				Thread th = new Thread(r, "Quilt IPC Handler " + number.incrementAndGet());
-				th.setDaemon(!isServer);
-				return th;
-			}
-		});
-
-		writer = new Thread(this::runWriter, "Quilt IPC Writer");
-		writer.setDaemon(!isServer);
-		writer.start();
-
-		reader = new Thread(this::runReader, "Quilt IPC Reader");
-		reader.setDaemon(!isServer);
-		reader.start();
+	QuiltIPC(Socket socket, Consumer<LoaderValue> msgHandler) {
+		this.msgHandler = msgHandler;
+		writerQueue = new LinkedBlockingQueue<>();
+		sender = new ReadySender(socket);
 	}
 
 	public void send(LoaderValue value) {
 		try {
-			writerQueue.put(value);
+			BlockingQueue<LoaderValue> queue = writerQueue;
+			if (queue != null) {
+				queue.put(value);
+			}
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
 	}
 
-	private void runWriter() {
-		try {
-			DataOutputStream stream = new DataOutputStream(socket.getOutputStream());
-			while (true) {
+	public boolean didFail() {
+		return sender instanceof FailedSender;
+	}
+
+	private abstract class Sender {
+
+	}
+
+	private final class ConnectingSender extends Sender {
+
+		final File portFile;
+		final File readyFile;
+		final Process waitingProcess;
+		final Thread waitingThread;
+
+		ConnectingSender(File portFile, File readyFile, Process waitingProcess) {
+			this.portFile = portFile;
+			this.readyFile = readyFile;
+			this.waitingProcess = waitingProcess;
+			this.waitingThread = new Thread(this::runWait, "Quilt IPC Launcher");
+			waitingThread.setDaemon(true);
+			waitingThread.start();
+		}
+
+		private void runWait() {
+			while (waitingProcess.isAlive()) {
+				if (readyFile.isFile()) {
+					try {
+						QuiltIPC.this.sender = new ReadySender(readPort(portFile));
+					} catch (IOException e) {
+						e.printStackTrace();
+						exception = e;
+					}
+					return;
+				}
 				try {
-					LoaderValue value = writerQueue.take();
-					ByteArrayOutputStream baos = new ByteArrayOutputStream();
-					LoaderValueFactory.getFactory().write(value, baos);
-					byte[] written = baos.toByteArray();
-					stream.writeInt(written.length);
-					stream.write(written);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
+					Thread.sleep(10);
+				} catch (InterruptedException ignored) {
+					// No reason not to sleep since we're a daemon thread
 				}
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
-			synchronized (this) {
-				if (exception == null) {
-					exception = e;
-				} else {
-					exception.addSuppressed(e);
-				}
-			}
+			// Crashed
+			QuiltIPC.this.sender = QuiltIPC.this.new FailedSender();
 		}
 	}
 
-	private void runReader() {
-		try {
-			DataInputStream stream = new DataInputStream(socket.getInputStream());
-			while (true) {
-				int length = stream.readInt();
-				LoaderValue value = LoaderValueFactory.getFactory().read(new LimitedInputStream(stream, length));
-				handler.execute(() -> msgHandler.accept(value));
+	private final class FailedSender extends Sender {
+		FailedSender() {
+			writerQueue = null;
+		}
+	}
+
+	private final class ReadySender extends Sender {
+
+		private final Socket socket;
+		private final Thread writer, reader;
+		private final Executor handler;
+
+		ReadySender(int port) throws IOException {
+			this(new Socket(InetAddress.getLoopbackAddress(), port));
+		}
+
+		ReadySender(Socket socket) {
+			this.socket = socket;
+			handler = Executors.newSingleThreadExecutor(new ThreadFactory() {
+				final AtomicInteger number = new AtomicInteger();
+
+				@Override
+				public Thread newThread(Runnable r) {
+					Thread th = new Thread(r, "Quilt IPC Handler " + number.incrementAndGet());
+					th.setDaemon(true);
+					return th;
+				}
+			});
+
+			writer = new Thread(this::runWriter, "Quilt IPC Writer");
+			writer.setDaemon(true);
+			writer.start();
+
+			reader = new Thread(this::runReader, "Quilt IPC Reader");
+			reader.setDaemon(true);
+			reader.start();
+		}
+
+		private void runWriter() {
+			try {
+				DataOutputStream stream = new DataOutputStream(socket.getOutputStream());
+				while (true) {
+					try {
+						LoaderValue value = writerQueue.take();
+						ByteArrayOutputStream baos = new ByteArrayOutputStream();
+						LoaderValueFactory.getFactory().write(value, baos);
+						byte[] written = baos.toByteArray();
+						stream.writeInt(written.length);
+						stream.write(written);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+				synchronized (QuiltIPC.this) {
+					if (exception == null) {
+						exception = e;
+					} else {
+						exception.addSuppressed(e);
+					}
+				}
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
-			synchronized (this) {
-				if (exception == null) {
-					exception = e;
-				} else {
-					exception.addSuppressed(e);
+		}
+
+		private void runReader() {
+			try {
+				DataInputStream stream = new DataInputStream(socket.getInputStream());
+				while (true) {
+					int length = stream.readInt();
+					LoaderValue value = LoaderValueFactory.getFactory().read(new LimitedInputStream(stream, length));
+					handler.execute(() -> msgHandler.accept(value));
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+				synchronized (QuiltIPC.this) {
+					if (exception == null) {
+						exception = e;
+					} else {
+						exception.addSuppressed(e);
+					}
 				}
 			}
 		}
