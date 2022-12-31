@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.json5.JsonReader;
 import org.quiltmc.json5.JsonToken;
+import org.quiltmc.json5.JsonWriter;
 import org.quiltmc.json5.exception.MalformedSyntaxException;
 import org.quiltmc.json5.exception.ParseException;
 import org.quiltmc.loader.api.LoaderValue;
@@ -97,6 +98,8 @@ interface JsonLoaderValue extends LoaderValue {
 
 		throw new UnsupportedOperationException("Encountered unreachable state");
 	}
+
+	void write(JsonWriter writer) throws IOException;
 
 	/**
 	 * @return the location of this loader value in the originating json file.
@@ -169,6 +172,11 @@ interface JsonLoaderValue extends LoaderValue {
 		}
 
 		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.value(value);
+		}
+
+		@Override
 		public boolean equals(Object obj) {
 			return obj instanceof StringImpl && value.equals(((StringImpl) obj).value);
 		}
@@ -196,6 +204,11 @@ interface JsonLoaderValue extends LoaderValue {
 		@Override
 		public String location() {
 			return this.location;
+		}
+
+		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.value(value);
 		}
 
 		@Override
@@ -229,6 +242,11 @@ interface JsonLoaderValue extends LoaderValue {
 		}
 
 		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.value(value);
+		}
+
+		@Override
 		public boolean equals(Object obj) {
 			return obj instanceof BooleanImpl && value == ((BooleanImpl) obj).value;
 		}
@@ -256,6 +274,16 @@ interface JsonLoaderValue extends LoaderValue {
 		@Override
 		public String location() {
 			return this.location;
+		}
+
+		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.beginObject();
+			for (Map.Entry<String, LoaderValue> entry : entrySet()) {
+				writer.name(entry.getKey());
+				((JsonLoaderValue) entry.getValue()).write(writer);
+			}
+			writer.endObject();
 		}
 
 		@Override
@@ -312,6 +340,15 @@ interface JsonLoaderValue extends LoaderValue {
 		}
 
 		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.beginArray();
+			for (LoaderValue elem : value) {
+				((JsonLoaderValue) elem).write(writer);
+			}
+			writer.endArray();
+		}
+
+		@Override
 		public JsonLoaderValue get(int i) {
 			return (JsonLoaderValue) this.value.get(i);
 		}
@@ -351,6 +388,11 @@ interface JsonLoaderValue extends LoaderValue {
 		@Override
 		public String location() {
 			return this.location;
+		}
+
+		@Override
+		public void write(JsonWriter writer) throws IOException {
+			writer.nullValue();
 		}
 
 		@Override

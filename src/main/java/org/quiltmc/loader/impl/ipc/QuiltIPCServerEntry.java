@@ -2,10 +2,12 @@ package org.quiltmc.loader.impl.ipc;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileChannel.MapMode;
-import java.nio.file.StandardOpenOption;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.file.Files;
+
+import org.quiltmc.loader.api.plugin.LoaderValueFactory;
 
 public class QuiltIPCServerEntry {
 	public static void main(String[] args) {
@@ -26,20 +28,36 @@ public class QuiltIPCServerEntry {
 	}
 
 	private static void run(String[] args) throws IOException {
-		File f = new File(args[1]);
-		if (!f.exists()) {
-			System.err.println("QUILT_IPC_SERVER: Missing IPC file " + f);
+		File f = new File(args[1] + ".port");
+		if (f.exists()) {
+			System.err.println("QUILT_IPC_SERVER: IPC file already exists" + f);
 			System.exit(3);
 			return;
 		}
 
-		try (FileChannel fc = FileChannel.open(f.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ)) {
-			int size = IpcBuffers.BUFFER_SIZE_ONEWAY;
-			MappedByteBuffer dataOut = fc.map(MapMode.READ_WRITE, IpcBuffers.BUFFER_SERVER_WRITE, size);
-			MappedByteBuffer dataIn = fc.map(MapMode.READ_ONLY, IpcBuffers.BUFFER_CLIENT_WRITE, size);
-			IpcBuffers.writeReaderIndex(dataOut, 8);
-			IpcBuffers.writeWriterIndex(dataOut, 8);
-			QuiltIPC ipc = new QuiltIPC(dataIn, dataOut, true);
+		ServerSocket socket = new ServerSocket(0, 0, InetAddress.getByName(null));
+		int port = socket.getLocalPort();
+		System.out.println("Port = " + port);
+		byte[] bytes = { //
+			(byte) ((port >>> 24) & 0xFF), //
+			(byte) ((port >>> 16) & 0xFF), //
+			(byte) ((port >>> 8) & 0xFF), //
+			(byte) ((port >>> 0) & 0xFF), //
+		};
+		Files.write(f.toPath(), bytes);
+		Files.write(new File(args[1] + ".ready").toPath(), new byte[0]);
+		Socket connection = socket.accept();
+		QuiltIPC ipc = new QuiltIPC(connection, true, value -> {
+			System.out.println("SV: " + value + " '" + value.asString() + "'");
+		});
+		for (int i = 0; i < 10; i++) {
+			ipc.send(LoaderValueFactory.getFactory().string("Hello " + i));
 		}
+		try {
+			Thread.sleep(10000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		System.exit(0);
 	}
 }
