@@ -54,7 +54,7 @@ public class QuiltIPCServerEntry {
 		portFile.deleteOnExit();
 		readyFile.deleteOnExit();
 		Socket connection = socket.accept();
-		new QuiltIPCServerEntry(connection);
+		QuiltIPCServerEntry server = new QuiltIPCServerEntry(connection);
 	}
 
 	final QuiltProgressWindow progress;
@@ -67,6 +67,7 @@ public class QuiltIPCServerEntry {
 
 	private void handleMessage(LoaderValue value) {
 		if (value.type() == LType.NULL) {
+			ipc.close();
 			System.exit(0);
 			return;
 		}

@@ -26,18 +26,17 @@ import org.quiltmc.loader.api.plugin.LoaderValueFactory;
 /** Client entry point for opening communication to a local server. Fairly low level - */
 public class QuiltIPC {
 
-	private static final String SYS_PROP = "quiltmc.ipc.is_forked_client";
+	private static final String SYS_PROP = "quiltmc.loader.ipc.port";
 
 	public static QuiltIPC connect(File medium, Consumer<LoaderValue> handler) throws IOException {
 
-		boolean start = !Boolean.getBoolean(SYS_PROP);
-
-		File portFile = new File(medium.toString() + ".port");
-		File readyFile = new File(medium.toString() + ".ready");
+		Integer overridePort = Integer.getInteger(SYS_PROP);
 
 		QuiltIPC ipc = new QuiltIPC(handler);
 
-		if (start) {
+		if (overridePort == null) {
+			File portFile = new File(medium.toString() + ".port");
+			File readyFile = new File(medium.toString() + ".ready");
 			if (portFile.exists()) {
 				portFile.delete();
 			}
@@ -62,7 +61,7 @@ public class QuiltIPC {
 
 			ipc.sender = ipc.new ConnectingSender(portFile, readyFile, process);
 		} else {
-			ipc.sender = ipc.new ReadySender(readPort(portFile));
+			ipc.sender = ipc.new ReadySender(overridePort);
 		}
 
 		return ipc;
@@ -90,14 +89,14 @@ public class QuiltIPC {
 		}
 	}
 
-	final Consumer<LoaderValue> msgHandler;
+	private final Consumer<LoaderValue> msgHandler;
 
 	/** Set to null if we fail to connect. */
-	volatile BlockingQueue<LoaderValue> writerQueue;
+	private volatile BlockingQueue<LoaderValue> writerQueue;
 
-	Sender sender;
-
-	volatile Throwable exception;
+	private Sender sender;
+	private volatile Throwable exception;
+	private volatile boolean closed;
 
 	QuiltIPC(Consumer<LoaderValue> msgHandler) {
 		this.msgHandler = msgHandler;
@@ -126,8 +125,13 @@ public class QuiltIPC {
 		return sender instanceof FailedSender;
 	}
 
-	private abstract class Sender {
+	public void close() {
+		closed = true;
+		writerQueue = null;
+	}
 
+	private abstract class Sender {
+		// Empty
 	}
 
 	private final class ConnectingSender extends Sender {
@@ -222,6 +226,9 @@ public class QuiltIPC {
 					}
 				}
 			} catch (IOException e) {
+				if (closed) {
+					return;
+				}
 				e.printStackTrace();
 				synchronized (QuiltIPC.this) {
 					if (exception == null) {
@@ -242,6 +249,9 @@ public class QuiltIPC {
 					handler.execute(() -> msgHandler.accept(value));
 				}
 			} catch (IOException e) {
+				if (closed) {
+					return;
+				}
 				e.printStackTrace();
 				synchronized (QuiltIPC.this) {
 					if (exception == null) {
