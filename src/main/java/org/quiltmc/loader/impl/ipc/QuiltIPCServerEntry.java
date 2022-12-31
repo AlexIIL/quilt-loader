@@ -28,9 +28,11 @@ public class QuiltIPCServerEntry {
 	}
 
 	private static void run(String[] args) throws IOException {
-		File f = new File(args[1] + ".port");
-		if (f.exists()) {
-			System.err.println("QUILT_IPC_SERVER: IPC file already exists" + f);
+		File portFile = new File(args[1] + ".port");
+		File readyFile = new File(args[1] + ".ready");
+
+		if (portFile.exists()) {
+			System.err.println("QUILT_IPC_SERVER: IPC file already exists" + portFile);
 			System.exit(3);
 			return;
 		}
@@ -44,8 +46,10 @@ public class QuiltIPCServerEntry {
 			(byte) ((port >>> 8) & 0xFF), //
 			(byte) ((port >>> 0) & 0xFF), //
 		};
-		Files.write(f.toPath(), bytes);
-		Files.write(new File(args[1] + ".ready").toPath(), new byte[0]);
+		Files.write(portFile.toPath(), bytes);
+		Files.write(readyFile.toPath(), new byte[0]);
+		portFile.deleteOnExit();
+		readyFile.deleteOnExit();
 		Socket connection = socket.accept();
 		QuiltIPC ipc = new QuiltIPC(connection, true, value -> {
 			System.out.println("SV: " + value + " '" + value.asString() + "'");
