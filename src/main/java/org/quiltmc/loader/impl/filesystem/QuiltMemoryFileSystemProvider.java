@@ -52,58 +52,18 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 @SuppressWarnings("unchecked") // TODO make more specific
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 	public QuiltMemoryFileSystemProvider() {}
 
 	public static final String SCHEME = "quilt.mfs";
 
 	static final String READ_ONLY_EXCEPTION = "This FileSystem is read-only";
-
-	private static final Map<String, WeakReference<QuiltMemoryFileSystem>> ACTIVE_FILESYSTEMS = new HashMap<>();
-
-	static {
-		// Java requires we create a class named "Handler"
-		// in the package "<system-prop>.<scheme>"
-		// See java.net.URL#URL(java.lang.String, java.lang.String, int, java.lang.String)
-		final String key = "java.protocol.handler.pkgs";
-		final String pkg = "org.quiltmc.loader.impl.filesystem";
-		String prop = System.getProperty(key);
-		if (prop == null) {
-			System.setProperty(key, pkg);
-		} else if (!prop.contains(pkg)) {
-			System.setProperty(key, prop + "|" + pkg);
-		}
-	}
-
-	synchronized static void register(QuiltMemoryFileSystem fs) {
-		URI uri = URI.create(SCHEME + "://" + fs.name + "/hello");
-		if (!"/hello".equals(uri.getPath())) {
-			throw new IllegalArgumentException("Not a valid name - it includes a path! '" + fs.name + "'");
-		}
-		WeakReference<QuiltMemoryFileSystem> oldRef = ACTIVE_FILESYSTEMS.get(fs.name);
-		if (oldRef != null) {
-			QuiltMemoryFileSystem old = oldRef.get();
-			if (old != null) {
-				throw new IllegalStateException("Multiple registered file systems for name '" + fs.name + "'");
-			}
-		}
-		ACTIVE_FILESYSTEMS.put(fs.name, new WeakReference<>(fs));
-	}
-
-	@Nullable
-	synchronized static QuiltMemoryFileSystem getFileSystem(String name) {
-		WeakReference<QuiltMemoryFileSystem> ref = ACTIVE_FILESYSTEMS.get(name);
-		return ref != null ? ref.get() : null;
-	}
-
-	static synchronized void closeFileSystem(QuiltMemoryFileSystem fs) {
-		WeakReference<QuiltMemoryFileSystem> removedRef = ACTIVE_FILESYSTEMS.remove(fs.name);
-		if (removedRef.get() != fs) {
-			throw new IllegalStateException("FileSystem already removed!");
-		}
-	}
+	static final QuiltFSP<QuiltMemoryFileSystem> PROVIDER = new QuiltFSP<>(SCHEME);
 
 	public static QuiltMemoryFileSystemProvider instance() {
 		for (FileSystemProvider provider : FileSystemProvider.installedProviders()) {
@@ -131,25 +91,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 
 	@Override
 	public QuiltMemoryPath getPath(URI uri) {
-		if (!SCHEME.equals(uri.getScheme())) {
-			throw new IllegalArgumentException("Wrong scheme! " + uri);
-		}
-		String authority = uri.getAuthority();
-		if (authority == null) {
-			authority = uri.getHost();
-		} else if (authority.endsWith(":0")) {
-			// We add a (useless) port to allow URI.authority and host to be populated
-			authority = authority.substring(0, authority.length() - 2);
-		}
-		WeakReference<QuiltMemoryFileSystem> fsRef;
-		synchronized (this) {
-			fsRef = ACTIVE_FILESYSTEMS.get(authority);
-		}
-		QuiltMemoryFileSystem fs;
-		if (fsRef == null || (fs = fsRef.get()) == null) {
-			throw new IllegalArgumentException("Unknown file system name '" + authority + "'");
-		}
-		return fs.root.resolve(uri.getPath());
+		return PROVIDER.getFileSystem(uri).root.resolve(uri.getPath());
 	}
 
 	@Override
@@ -397,17 +339,17 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 		}
 
 		QuiltMemoryEntry srcEntry = src.fs.files.get(src);
-		QuiltMemoryEntry dstEntry = src.fs.files.get(dst);
+		QuiltMemoryEntry dstEntry = dst.fs.files.get(dst);
 
 		if (srcEntry == null) {
 			throw new NoSuchFileException(src.toString());
 		}
 
-		if (!(srcEntry instanceof QuiltMemoryFile.ReadWrite)) {
+		if (!(srcEntry instanceof QuiltMemoryFile)) {
 			throw new IOException("Not a file: " + src);
 		}
 
-		QuiltMemoryFile.ReadWrite srcFile = (QuiltMemoryFile.ReadWrite) srcEntry;
+		QuiltMemoryFile srcFile = (QuiltMemoryFile) srcEntry;
 		boolean canExist = false;
 
 		for (CopyOption option : options) {
@@ -425,7 +367,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 					throw new DirectoryNotEmptyException(dstEntry.path.toString());
 				}
 				dstEntry = dstFile = new QuiltMemoryFile.ReadWrite(dst);
-				src.fs.files.put(dst, dstEntry);
+				dst.fs.files.put(dst, dstEntry);
 			} else if (dstEntry instanceof QuiltMemoryFile.ReadWrite) {
 				dstFile = (QuiltMemoryFile.ReadWrite) dstEntry;
 			} else if (dstEntry != null) {
@@ -440,7 +382,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 		}
 
 		if (dstFile == null) {
-			QuiltMemoryEntry parent = src.fs.files.get(dst.parent);
+			QuiltMemoryEntry parent = dst.fs.files.get(dst.parent);
 			if (parent == null) {
 				throw new IOException("Missing parent folder! " + dst);
 			} else if (parent instanceof QuiltMemoryFolder.ReadWrite) {
@@ -451,7 +393,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 			}
 
 			dstEntry = dstFile = new QuiltMemoryFile.ReadWrite(dst);
-			src.fs.files.put(dst, dstEntry);
+			dst.fs.files.put(dst, dstEntry);
 		}
 
 		dstFile.copyFrom(srcFile);
@@ -505,7 +447,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 
 	@Override
 	public <V extends FileAttributeView> V getFileAttributeView(Path path, Class<V> type, LinkOption... options) {
-		QuiltMemoryPath qmp = (QuiltMemoryPath) path;
+		QuiltMemoryPath qmp = toAbsQuiltPath(path);
 		return qmp.fs.getFileAttributeView(qmp, type);
 	}
 
@@ -523,18 +465,7 @@ public final class QuiltMemoryFileSystemProvider extends FileSystemProvider {
 
 	@Override
 	public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options) throws IOException {
-		Map<String, Object> map = new HashMap<>();
-		BasicFileAttributes attrs = readAttributes(path, BasicFileAttributes.class, options);
-		map.put("isDirectory", attrs.isDirectory());
-		map.put("isRegularFile", attrs.isRegularFile());
-		map.put("isSymbolicLink", attrs.isSymbolicLink());
-		map.put("isOther", attrs.isOther());
-		map.put("size", attrs.size());
-		map.put("fileKey", attrs.fileKey());
-		map.put("lastModifiedTime", attrs.lastModifiedTime());
-		map.put("lastAccessTime", attrs.lastAccessTime());
-		map.put("creationTime", attrs.creationTime());
-		return map;
+		return PROVIDER.readAttributes(this, path, attributes, options);
 	}
 
 	@Override

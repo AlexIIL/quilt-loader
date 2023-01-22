@@ -30,7 +30,10 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 import org.jetbrains.annotations.Nullable;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public abstract class QuiltBaseFileSystem<FS extends QuiltBaseFileSystem<FS, P>, P extends QuiltBasePath<FS, P>>
 	extends FileSystem {
 	static {
@@ -143,11 +146,16 @@ public abstract class QuiltBaseFileSystem<FS extends QuiltBaseFileSystem<FS, P>,
 
 	abstract P createPath(@Nullable P parent, String name);
 
+	@Override
+	public String toString() {
+		return getClass().getSimpleName() + "[" + name + "]";
+	}
+
 	public String getName() {
 		return name;
 	}
 
-	public Path getRoot() {
+	public P getRoot() {
 		return root;
 	}
 

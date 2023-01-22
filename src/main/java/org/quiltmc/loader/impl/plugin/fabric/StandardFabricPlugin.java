@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.quiltmc.loader.api.plugin.ModLocation;
 import org.quiltmc.loader.api.plugin.QuiltPluginError;
@@ -35,9 +36,12 @@ import org.quiltmc.loader.impl.fabric.metadata.ParseMetadataException;
 import org.quiltmc.loader.impl.metadata.FabricLoaderModMetadata;
 import org.quiltmc.loader.impl.metadata.NestedJarEntry;
 import org.quiltmc.loader.impl.plugin.BuiltinQuiltPlugin;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.log.Log;
 import org.quiltmc.loader.impl.util.log.LogCategory;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class StandardFabricPlugin extends BuiltinQuiltPlugin {
 
 	@Override
@@ -59,7 +63,7 @@ public class StandardFabricPlugin extends BuiltinQuiltPlugin {
 
 	private ModLoadOption[] scan0(Path root, PluginGuiIcon fileIcon, ModLocation location, boolean isZip, PluginGuiTreeNode guiNode) throws IOException {
 		Path fmj = root.resolve("fabric.mod.json");
-		if (!Files.isRegularFile(fmj)) {
+		if (!FasterFiles.isRegularFile(fmj)) {
 			return null;
 		}
 
@@ -85,7 +89,7 @@ public class StandardFabricPlugin extends BuiltinQuiltPlugin {
 					continue;
 				}
 
-				if (!Files.exists(inner)) {
+				if (!FasterFiles.exists(inner)) {
 					Log.warn(LogCategory.DISCOVERY, "Didn't find nested jar " + inner + " in " + context().manager().describePath(from));
 					PluginGuiTreeNode missingJij = guiNode.addChild(QuiltLoaderText.of(inner.toString()), SortOrder.ALPHABETICAL_ORDER);
 					missingJij.mainIcon(missingJij.manager().iconJarFile());
@@ -111,8 +115,10 @@ public class StandardFabricPlugin extends BuiltinQuiltPlugin {
 			error.appendDescription(QuiltLoaderText.translate("gui.text.invalid_metadata.desc.0", describedPath));
 			error.appendThrowable(parse);
 			PluginGuiManager guiManager = context().manager().getGuiManager();
-			error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), context().manager().getRealContainingFile(root))
-				.icon(guiManager.iconJarFile().withDecoration(guiManager.iconFabric()));
+			context().manager().getRealContainingFile(root).ifPresent(real ->
+					error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), real)
+					.icon(guiManager.iconJarFile().withDecoration(guiManager.iconFabric()))
+			);
 
 			guiNode.addChild(QuiltLoaderText.translate("gui.text.invalid_metadata", parse.getMessage()))//TODO: translate
 				.setError(parse, error);

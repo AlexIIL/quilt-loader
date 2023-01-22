@@ -24,25 +24,29 @@ import java.nio.file.ProviderNotFoundException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.api.plugin.gui.PluginGuiManager;
 import org.quiltmc.loader.api.plugin.gui.PluginGuiTreeNode;
 import org.quiltmc.loader.api.plugin.solver.ModLoadOption;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 import net.fabricmc.api.EnvType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.PLUGIN_API)
 public interface QuiltPluginManager {
 
 	// #######
 	// Loading
 	// #######
 
-	/** Returns a task which will load the specified zip file and returns a path to the root of it's contents, using
-	 * {@link FileSystems#newFileSystem(Path, ClassLoader)} to actually load it.
+	/** Returns a task which will load the specified zip file and returns a path to the root of it's contents.
 	 * <p>
 	 * How the given zip is loaded depends on loaders config settings - in particular the zip could be extracted to a
 	 * temporary folder on the same filesystem as the original zip.
@@ -68,7 +72,14 @@ public interface QuiltPluginManager {
 	/** Creates a new in-memory file system, then copies the contents of the given folder into it.
 	 *
 	 * @return The root {@link Path} of the newly allocated {@link FileSystem} */
-	Path copyToReadOnlyFileSystem(String name, Path folderRoot) throws IOException;
+	default Path copyToReadOnlyFileSystem(String name, Path folderRoot) throws IOException {
+		return copyToReadOnlyFileSystem(name, folderRoot, false);
+	}
+
+	/** Creates a new in-memory file system, then copies the contents of the given folder into it.
+	 *
+	 * @return The root {@link Path} of the newly allocated {@link FileSystem} */
+	Path copyToReadOnlyFileSystem(String name, Path folderRoot, boolean compress) throws IOException;
 
 	// #################
 	// Identifying Paths
@@ -90,8 +101,8 @@ public interface QuiltPluginManager {
 	/** Retrieves the file in the default {@link FileSystem} (that the user can view directly in a file browser) that
 	 * contains the given path.
 	 * 
-	 * @return Either a Path with a {@link FileSystem} equal to {@link FileSystems#getDefault()}, or null. */
-	Path getRealContainingFile(Path file);
+	 * @return Either a Path with a {@link FileSystem} equal to {@link FileSystems#getDefault()}, or empty.*/
+	Optional<Path> getRealContainingFile(Path file);
 
 	// #################
 	// Joined Paths
@@ -100,7 +111,7 @@ public interface QuiltPluginManager {
 	/** @return True if the given {@link Path} points to multiple root paths. */
 	boolean isJoinedPath(Path path);
 
-    /** @return All of paths that the given path actually refers to, or null if {@link #isJoinedPath(Path)} returns
+    /** @return All paths that the given path actually refers to, or null if {@link #isJoinedPath(Path)} returns
      *         false. */
 	Collection<Path> getJoinedPaths(Path path);
 

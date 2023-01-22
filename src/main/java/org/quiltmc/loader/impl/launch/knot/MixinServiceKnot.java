@@ -17,10 +17,13 @@
 
 package org.quiltmc.loader.impl.launch.knot;
 
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.ModContainer;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.quiltmc.loader.impl.QuiltLoaderImpl;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.launch.platform.container.ContainerHandleURI;
@@ -49,6 +52,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public class MixinServiceKnot implements IMixinService, IClassProvider, IClassBytecodeProvider, ITransformerProvider, IClassTracker {
 	static IMixinTransformer transformer;
 
@@ -202,7 +206,7 @@ public class MixinServiceKnot implements IMixinService, IClassProvider, IClassBy
 				Optional<ModContainer> modContainer = QuiltLoader.getModContainer(mod);
 				if (modContainer.isPresent()) {
 					Path modResource = modContainer.get().rootPath().resolve(resource);
-					if (!Files.exists(modResource)) {
+					if (!FasterFiles.exists(modResource)) {
 						return null;
 					}
 					try {

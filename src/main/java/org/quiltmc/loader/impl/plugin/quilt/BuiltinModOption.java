@@ -25,7 +25,10 @@ import org.quiltmc.loader.api.plugin.gui.PluginGuiIcon;
 import org.quiltmc.loader.impl.metadata.qmj.InternalModMetadata;
 import org.quiltmc.loader.impl.plugin.base.InternalModOptionBase;
 import org.quiltmc.loader.impl.plugin.gui.GuiManagerImpl;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class BuiltinModOption extends InternalModOptionBase {
 
 	public BuiltinModOption(QuiltPluginContext pluginContext, InternalModMetadata meta, Path from, Path resourceRoot) {
@@ -51,6 +54,6 @@ public class BuiltinModOption extends InternalModOptionBase {
 				throw new RuntimeException(e);
 			}
 		}
-		return new BuiltinModContainer(pluginContext, metadata, from, transformedResourceRoot);
+		return new BuiltinModContainer(pluginContext, metadata, from, transformedResourceRoot, needsChasmTransforming());
 	}
 }

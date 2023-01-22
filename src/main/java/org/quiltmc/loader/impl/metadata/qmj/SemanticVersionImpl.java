@@ -24,10 +24,13 @@ import java.util.regex.Pattern;
 
 import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.api.VersionFormatException;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 import net.fabricmc.loader.api.SemanticVersion;
 import net.fabricmc.loader.api.VersionParsingException;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public class SemanticVersionImpl implements Version.Semantic {
 	private final String raw;
 	private final int[] components;
@@ -89,7 +92,7 @@ public class SemanticVersionImpl implements Version.Semantic {
 
 		int[] components = new int[componentStrings.length];
 
-		for (int i = 0; i < componentStrings.length; i++) {
+		for (int i = componentStrings.length - 1; i >= 0; i--) {
 			String compStr = componentStrings[i];
 
 			if (compStr.trim().isEmpty()) {
@@ -100,7 +103,13 @@ public class SemanticVersionImpl implements Version.Semantic {
 				if (permitWildcard && ("x".equalsIgnoreCase(compStr) || "*".equals(compStr))) {
 					components[i] = SemanticVersion.COMPONENT_WILDCARD;
 					if (i != components.length - 1) {
-						throw new VersionFormatException("Interjacent wildcard (1.x.2) are disallowed!");
+						if (components[i + 1] == SemanticVersion.COMPONENT_WILDCARD) {
+							// We have ?.?.x.x
+							// remove the last ".x" since it's unnecessary
+							components = Arrays.copyOf(components, components.length - 1);
+						} else {
+							throw new VersionFormatException("Interjacent wildcard (1.x.2) are disallowed!");
+						}
 					}
 				} else {
 					components[i] = Integer.parseInt(compStr);

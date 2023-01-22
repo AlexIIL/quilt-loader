@@ -18,6 +18,7 @@ package org.quiltmc.loader.impl.filesystem;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -31,6 +32,11 @@ import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
+import org.quiltmc.loader.impl.util.SystemProperties;
+
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 abstract class QuiltMemoryFile extends QuiltMemoryEntry {
 
 	private QuiltMemoryFile(QuiltMemoryPath path) {
@@ -60,10 +66,10 @@ abstract class QuiltMemoryFile extends QuiltMemoryEntry {
 
 		abstract int bytesLength();
 
-		static QuiltMemoryFile.ReadOnly create(QuiltMemoryPath path, byte[] bytes) {
+		static QuiltMemoryFile.ReadOnly create(QuiltMemoryPath path, byte[] bytes, boolean compress) {
 			int size = bytes.length;
 
-			if (size < 24) {
+			if (size < 24 || !compress) {
 				return new QuiltMemoryFile.ReadOnly.Absolute(path, false, size, bytes);
 			}
 
@@ -325,6 +331,16 @@ abstract class QuiltMemoryFile extends QuiltMemoryEntry {
 			return this;
 		}
 
+		void copyFrom(QuiltMemoryFile src) {
+			if (src instanceof ReadWrite) {
+				copyFrom((ReadWrite) src);
+			} else if (src instanceof ReadOnly) {
+				copyFrom((ReadOnly) src);
+			} else {
+				throw new IllegalStateException("Unknown QuiltMemoryFile " + src.getClass());
+			}
+		}
+
 		void copyFrom(ReadWrite src) {
 			if (src.bytes == null) {
 				this.bytes = null;
@@ -336,9 +352,27 @@ abstract class QuiltMemoryFile extends QuiltMemoryEntry {
 		}
 
 		void copyFrom(ReadOnly src) {
-			int offset = src.bytesOffset();
-			this.bytes = Arrays.copyOfRange(src.byteArray(), offset, offset + src.bytesLength());
-			this.length = src.bytesLength();
+			if (src.isCompressed) {
+				this.bytes = new byte[src.uncompressedSize];
+				this.length = bytes.length;
+				try {
+					InputStream stream = src.createInputStream();
+					int len = 0;
+					while (len < length) {
+						int read = stream.read(bytes, len, length - len);
+						if (read <= 0) {
+							throw new EOFException();
+						}
+						len += read;
+					}
+				} catch (IOException e) {
+					throw new IllegalStateException("Failed to read a perfectly good compressed stream!", e);
+				}
+			} else {
+				int offset = src.bytesOffset();
+				this.bytes = Arrays.copyOfRange(src.byteArray(), offset, offset + src.bytesLength());
+				this.length = src.bytesLength();
+			}
 		}
 
 		private void expand(int to) throws IOException {

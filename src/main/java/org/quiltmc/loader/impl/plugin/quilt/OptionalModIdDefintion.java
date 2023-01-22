@@ -27,8 +27,11 @@ import org.quiltmc.loader.api.plugin.solver.LoadOption;
 import org.quiltmc.loader.api.plugin.solver.ModLoadOption;
 import org.quiltmc.loader.api.plugin.solver.RuleContext;
 import org.quiltmc.loader.api.plugin.solver.RuleDefiner;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 /** A concrete definition that allows the modid to be loaded from any of a set of {@link ModLoadOption}s. */
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public final class OptionalModIdDefintion extends ModIdDefinition {
 
 	static final Comparator<ModLoadOption> MOD_COMPARATOR = (a, b) -> {
@@ -106,20 +109,21 @@ public final class OptionalModIdDefintion extends ModIdDefinition {
 		int index = 0;
 
 		for (ModLoadOption mod : sources) {
+			int weight;
 			if (mod instanceof AliasedLoadOption) {
-				continue;
-			}
+				weight = 0;
+			} else {
+				weight = 1000;
 
-			int weight = 1000;
-
-			if (mod.metadata().loadType() == ModLoadType.IF_POSSIBLE) {
-				weight = -weight;
+				if (mod.metadata().loadType() == ModLoadType.IF_POSSIBLE) {
+					weight = -weight;
+				}
 			}
 
 			// Always prefer newer (larger) versions
 			// by subtracting the larger index
 			weight -= index++;
-			ctx.setWeight(mod, weight);
+			ctx.setWeight(mod, this, weight);
 		}
 	}
 

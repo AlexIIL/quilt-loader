@@ -17,7 +17,10 @@
 package org.quiltmc.loader.impl.report;
 
 import org.quiltmc.loader.impl.discovery.ModResolutionException;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class QuiltReportedError extends ModResolutionException {
 
 	public final QuiltReport report;

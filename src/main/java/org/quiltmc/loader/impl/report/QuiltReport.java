@@ -22,6 +22,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -29,11 +30,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.log.Log;
 import org.quiltmc.loader.impl.util.log.LogCategory;
 
 /** Helper class for writing a 'report' file to the game directory (either a crash report, a simulated load failed
  * report, or an informational mod state report). */
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class QuiltReport {
 
 	private final String header;
@@ -123,7 +127,7 @@ public class QuiltReport {
 	 * report this this will add the exception to the report before writing it to sysout. */
 	public Path writeInDirectory(Path gameDirectory) throws CrashReportSaveFailed {
 
-		Path crashReportDir = gameDirectory.resolve("crash-reports");
+		Path crashReportDir = gameDirectory == null ? Paths.get("crash-reports") : gameDirectory.resolve("crash-reports");
 		try {
 			Files.createDirectories(crashReportDir);
 		} catch (IOException io) {

@@ -32,7 +32,10 @@ import org.quiltmc.loader.api.plugin.solver.ModLoadOption;
 import org.quiltmc.loader.api.plugin.solver.Rule;
 import org.quiltmc.loader.api.plugin.solver.RuleContext;
 import org.quiltmc.loader.api.plugin.solver.TentativeLoadOption;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 abstract class BasePluginContext implements QuiltPluginContext {
 
 	final QuiltPluginManagerImpl manager;
@@ -155,14 +158,8 @@ abstract class BasePluginContext implements QuiltPluginContext {
 		}
 
 		@Override
-		public void addOption(LoadOption option, int weight) {
-			addOption(option);
-			setWeight(option, weight);
-		}
-
-		@Override
-		public void setWeight(LoadOption option, int weight) {
-			manager.solver.setWeight(option, weight);
+		public void setWeight(LoadOption option, Rule key, int weight) {
+			manager.solver.setWeight(option, key, weight);
 		}
 
 		@Override

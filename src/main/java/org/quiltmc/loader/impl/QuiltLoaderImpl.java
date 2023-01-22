@@ -22,6 +22,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -38,6 +39,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,14 +49,17 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.objectweb.asm.Opcodes;
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.LanguageAdapter;
 import org.quiltmc.loader.api.MappingResolver;
 import org.quiltmc.loader.api.ModContainer.BasicSourceType;
 import org.quiltmc.loader.api.ModDependency;
+import org.quiltmc.loader.api.ModMetadata.ProvidedMod;
+import org.quiltmc.loader.api.QuiltLoader;
+import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.api.entrypoint.EntrypointContainer;
 import org.quiltmc.loader.api.plugin.ModContainerExt;
 import org.quiltmc.loader.api.plugin.ModMetadataExt;
-import org.quiltmc.loader.api.plugin.ModMetadataExt.ProvidedMod;
 import org.quiltmc.loader.api.plugin.gui.PluginGuiTreeNode.WarningLevel;
 import org.quiltmc.loader.api.plugin.gui.QuiltLoaderText;
 import org.quiltmc.loader.api.plugin.solver.LoadOption;
@@ -68,6 +73,8 @@ import org.quiltmc.loader.impl.entrypoint.EntrypointStorage;
 import org.quiltmc.loader.impl.entrypoint.EntrypointUtils;
 import org.quiltmc.loader.impl.filesystem.QuiltJoinedFileSystem;
 import org.quiltmc.loader.impl.filesystem.QuiltJoinedPath;
+import org.quiltmc.loader.impl.filesystem.QuiltZipFileSystem;
+import org.quiltmc.loader.impl.filesystem.QuiltZipPath;
 import org.quiltmc.loader.impl.game.GameProvider;
 import org.quiltmc.loader.impl.gui.QuiltGuiEntry;
 import org.quiltmc.loader.impl.gui.QuiltJsonGui;
@@ -76,7 +83,6 @@ import org.quiltmc.loader.impl.launch.common.QuiltCodeSource;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncher;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
 import org.quiltmc.loader.impl.launch.common.QuiltMixinBootstrap;
-import org.quiltmc.loader.impl.launch.knot.Knot;
 import org.quiltmc.loader.impl.metadata.FabricLoaderModMetadata;
 import org.quiltmc.loader.impl.metadata.qmj.AdapterLoadableClassEntry;
 import org.quiltmc.loader.impl.metadata.qmj.InternalModMetadata;
@@ -91,8 +97,9 @@ import org.quiltmc.loader.impl.transformer.TransformCache;
 import org.quiltmc.loader.impl.util.Arguments;
 import org.quiltmc.loader.impl.util.DefaultLanguageAdapter;
 import org.quiltmc.loader.impl.util.FileSystemUtil;
-import org.quiltmc.loader.impl.util.FileSystemUtil.FileSystemDelegate;
 import org.quiltmc.loader.impl.util.ModLanguageAdapter;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.log.Log;
 import org.quiltmc.loader.impl.util.log.LogCategory;
@@ -104,12 +111,13 @@ import net.fabricmc.accesswidener.AccessWidener;
 import net.fabricmc.accesswidener.AccessWidenerReader;
 import net.fabricmc.api.EnvType;
 
+@QuiltLoaderInternal(value = QuiltLoaderInternalType.LEGACY_EXPOSED, replacements = QuiltLoader.class)
 public final class QuiltLoaderImpl {
 	public static final QuiltLoaderImpl INSTANCE = InitHelper.get();
 
 	public static final int ASM_VERSION = Opcodes.ASM9;
 
-	public static final String VERSION = "0.18.1-beta.25";
+	public static final String VERSION = "0.18.1-beta.56";
 	public static final String MOD_ID = "quilt_loader";
 	public static final String DEFAULT_MODS_DIR = "mods";
 	public static final String DEFAULT_CONFIG_DIR = "config";
@@ -281,17 +289,26 @@ public final class QuiltLoaderImpl {
 		}
 
 		List<ModLoadOption> modList = new ArrayList<>(result.directMods().values());
+		Set<String> modIds = new HashSet<>();
+		for (ModLoadOption mod : modList) {
+			modIds.add(mod.id());
+		}
 
 		performMixinReordering(modList);
 		performLoadLateReordering(modList);
 
-		Path transformCacheFile = getGameDir().resolve(CACHE_DIR_NAME).resolve("transform-cache.zip");
-		TransformCache.populateTransformBundle(transformCacheFile, modList, result);
-		Path transformedModBundle;
+		long zipStart = System.nanoTime();
+		String suffix = System.getProperty(SystemProperties.CACHE_SUFFIX, getEnvironmentType().name().toLowerCase(Locale.ROOT));
+
+		Path transformCacheFile = getGameDir().resolve(CACHE_DIR_NAME).resolve("transform-cache-" + suffix + ".zip");
+		QuiltZipPath transformedModBundle = TransformCache.populateTransformBundle(transformCacheFile, modList, result);
+
+		long zipEnd = System.nanoTime();
+
 		try {
-			transformedModBundle = FileSystemUtil.getJarFileSystem(transformCacheFile, false).get().getPath("/");
-		} catch (IOException e) {
-			throw new RuntimeException(e); // TODO
+			QuiltLauncherBase.getLauncher().setTransformCache(transformedModBundle.toUri().toURL());
+		} catch (MalformedURLException e) {
+			throw new RuntimeException(e);
 		}
 
 		Set<String> modsToCopy = new HashSet<>();
@@ -302,50 +319,90 @@ public final class QuiltLoaderImpl {
 			}
 		}
 
+		long zipSubCopyTotal = 0;
+		long jarCopyTotal = 0;
+
 		for (ModLoadOption modOption : modList) {
 			Path resourceRoot;
 
 			if (!modOption.needsChasmTransforming() && modOption.namespaceMappingFrom() == null) {
 				resourceRoot = modOption.resourceRoot();
 			} else {
-				Path modTransformed = transformedModBundle.resolve(modOption.id() + "/");
-				Path excluded = transformedModBundle.resolve(modOption.id() + ".removed");
+				String modid = modOption.id();
+				Path modTransformed = transformedModBundle.resolve(modid + "/");
+				Path excluded = transformedModBundle.resolve(modid + ".removed");
 
-				if (Files.exists(excluded)) {
+				if (FasterFiles.exists(excluded)) {
 					throw new Error("// TODO: Implement pre-transform file removal!");
-				} else if (!Files.isDirectory(modTransformed)) {
+				} else if (!FasterFiles.isDirectory(modTransformed)) {
 					resourceRoot = modOption.resourceRoot();
 				} else {
 					List<Path> paths = new ArrayList<>();
 
-					paths.add(modTransformed);
+					long start = System.nanoTime();
+					paths.add(new QuiltZipFileSystem("transformed-mod-" + modid, transformedModBundle.resolve(modid)).getRoot());
+					if (modOption.couldResourcesChange()) {
+						paths.add(modOption.resourceRoot());
+					}
+					zipSubCopyTotal += System.nanoTime() - start;
 
-					/* Single path optimisation disabled since
-					 * URLClassPath can't handle loading folders from inside a zip.
-					 * We can re-enable it if we either move to our own classloader
-					 * or create the "cached filemap" filesystem. */
+					// This cannot pass a java ZipFileSystem directly since URLClassPath can't load
+					// from folders inside a zip.
 
-					// if (paths.size() == 1) {
-					// resourceRoot = paths.get(0);
-					// } else {
-					resourceRoot = new QuiltJoinedFileSystem("final-mod-" + modOption.id(), paths).getRoot();
-					// }
+					// Since we're using our own QuiltZipFileSystem this is okay, but if that gets reverted
+					// we'll also need to revert this optimisation
+
+					 if (paths.size() == 1) {
+						 resourceRoot = paths.get(0);
+					 } else {
+						 resourceRoot = new QuiltJoinedFileSystem("final-mod-" + modid, paths).getRoot();
+					 }
 				}
 			}
 
-			if (modsToCopy.contains(modOption.id()) || shouldCopyToJar(modOption)) {
+			String modid2 = modOption.id();
+			if (modsToCopy.contains(modid2) || shouldCopyToJar(modOption, modIds)) {
+				long start = System.nanoTime();
 				resourceRoot = copyToJar(modOption, resourceRoot);
+				jarCopyTotal += System.nanoTime() - start;
 			}
 
 			addMod(modOption.convertToMod(resourceRoot));
 		}
 
+		long modAddEnd = System.nanoTime();
+
+		System.out.println("transform-cache took " + (zipEnd - zipStart) / 1000_000 + "ms");
+		System.out.println("zip sub copy took " + zipSubCopyTotal / 1000_000 + "ms");
+		System.out.println("tmp jar copy took " + jarCopyTotal / 1000_000 + "ms");
+		System.out.println("mod adding took " + (modAddEnd - zipEnd - zipSubCopyTotal - jarCopyTotal) / 1000_000 + "ms");
+
 		int count = mods.size();
 		Log.info(LogCategory.GENERAL, "Loading %d mod%s:%n%s", count, count != 1 ? "s" : "", createModTable());
 	}
 
-	private boolean shouldCopyToJar(ModLoadOption mod) {
+	private boolean shouldCopyToJar(ModLoadOption mod, Set<String> modIds) {
 		String id = mod.id();
+		if (id.equals("minecraft")) {
+			if (Version.of("1.17.1").compareTo(mod.version()) > 0) {
+				// Versions before 1.17.1 don't work very well if they aren't at the root of their zip file
+				return true;
+			}
+			if (modIds.contains("fabric-resource-loader-v0")) {
+				if (Version.of("1.18.2").compareTo(mod.version()) >= 0) {
+					// Fabric API turns minecraft into a resource pack to load from instead of using the classpath,
+					// so it also doesn't work very well
+					return true;
+				}
+			}
+			if (modIds.contains("polymer")) {
+				if (Version.of("1.19.3").compareTo(mod.version()) >= 0) {
+					// Versions of polymer prior to 1.19.3 assume they can
+					// find the minecraft jar on the default file system
+					return true;
+				}
+			}
+		}
 		if (id.contains("yung")) {
 			// YUNGs mods use reflections
 			// which *require* the class files are loaded directly from .jar files :|
@@ -382,7 +439,7 @@ public final class QuiltLoaderImpl {
 					if (pathStr.startsWith("/")) {
 						pathStr = pathStr.substring(1);
 					}
-					if (Files.isDirectory(path)) {
+					if (FasterFiles.isDirectory(path)) {
 						zip.putNextEntry(new ZipEntry(pathStr + "/"));
 					} else {
 						zip.putNextEntry(new ZipEntry(pathStr));
@@ -397,7 +454,7 @@ public final class QuiltLoaderImpl {
 			FileSystem fs = FileSystems.newFileSystem(file.toPath(), (ClassLoader) null);
 			return fs.getPath("/");
 		} catch (IOException e) {
-			throw new Error("// TODO: Failed to copy to jar!");
+			throw new Error("// TODO: Failed to copy to jar!", e);
 		}
 	}
 
@@ -569,6 +626,8 @@ public final class QuiltLoaderImpl {
 		int maxVersionLength = "Version".length();
 		int maxPluginLength = "Plugin".length();
 		List<Integer> maxSourcePathLengths = new ArrayList<>();
+		Path absoluteGameDir = gameDir.toAbsolutePath().normalize();
+		Path absoluteModsDir = modsDir.toAbsolutePath().normalize();
 
 		for (ModContainerExt mod : mods) {
 			maxNameLength = Math.max(maxNameLength, mod.metadata().name().length());
@@ -578,8 +637,7 @@ public final class QuiltLoaderImpl {
 
 			for (List<Path> paths : mod.getSourcePaths()) {
 				for (int i = 0; i < paths.size(); i++) {
-					Path path = paths.get(i);
-					String pathStr = path.startsWith(gameDir) ? "<game>/" + gameDir.relativize(path).toString() : path.toString();
+					String pathStr = prefixPath(absoluteGameDir, absoluteModsDir, paths.get(i));
 					if (maxSourcePathLengths.size() <= i) {
 						int old = (i == 0 ? "File(s)" : "Sub-Files").length();
 						maxSourcePathLengths.add(Math.max(old, pathStr.length() + 1));
@@ -700,8 +758,7 @@ public final class QuiltLoaderImpl {
 					sbTab.append(" | ");
 					final String pathStr;
 					if (pathIndex < paths.size()) {
-						Path path = paths.get(pathIndex);
-						pathStr = path.startsWith(gameDir) ? "<game>/" + gameDir.relativize(path) : path.toString();
+						pathStr = prefixPath(absoluteGameDir, absoluteModsDir, paths.get(pathIndex));
 					} else {
 						pathStr = "";
 					}
@@ -717,6 +774,29 @@ public final class QuiltLoaderImpl {
 		}
 
 		to.accept(sbSep.toString());
+	}
+
+	public static String prefixPath(Path gameDir, Path modsDir, Path path) {
+		String fsSep = path.getFileSystem().getSeparator();
+		path = path.toAbsolutePath().normalize();
+		if (path.startsWith(modsDir)) {
+			return "<mods>" + fsSep + modsDir.relativize(path);
+		}
+		if (path.startsWith(gameDir)) {
+			return "<game>" + fsSep + gameDir.relativize(path);
+		}
+		String pathStr = path.toString();
+		String userHome = System.getProperty("user.home");
+		if (userHome.isEmpty()) {
+			return pathStr;
+		}
+		if (!userHome.endsWith(fsSep)) {
+			userHome += fsSep;
+		}
+		if (pathStr.startsWith(userHome)) {
+			return "<user>" + fsSep + pathStr.substring(userHome.length());
+		}
+		return pathStr;
 	}
 
 	private static void performMixinReordering(List<ModLoadOption> modList) {
@@ -763,7 +843,10 @@ public final class QuiltLoaderImpl {
 		// add mods to classpath
 		// TODO: This can probably be made safer, but that's a long-term goal
 		for (ModContainerExt mod : mods) {
-			if (!mod.metadata().id().equals(MOD_ID) && mod.getSourceType() != BasicSourceType.BUILTIN) {
+			if (mod.metadata().id().equals(MOD_ID)) {
+				continue;
+			}
+			if (mod.shouldAddToQuiltClasspath()) {
 				File jarFile = copiedToJarMods.get(mod.metadata().id());
 				if (jarFile == null) {
 					URL origin = null;//mod.getSourcePaths();
@@ -783,6 +866,12 @@ public final class QuiltLoaderImpl {
 			Set<Path> knownModPaths = new HashSet<>();
 
 			for (ModContainerExt mod : mods) {
+				for (List<Path> paths : mod.getSourcePaths()) {
+					if (paths.size() != 1) {
+						continue;
+					}
+					knownModPaths.add(paths.get(0).toAbsolutePath().normalize());
+				}
 				if (mod.rootPath() instanceof QuiltJoinedPath) {
 					QuiltJoinedPath joined = (QuiltJoinedPath) mod.rootPath();
 					for (int i = 0; i < joined.getFileSystem().getBackingPathCount(); i++) {
@@ -797,12 +886,15 @@ public final class QuiltLoaderImpl {
 			Path loaderPath = ClasspathModCandidateFinder.getLoaderPath();
 			if (loaderPath != null) knownModPaths.add(loaderPath.toAbsolutePath().normalize());
 
+			Path gameProviderPath = ClasspathModCandidateFinder.getGameProviderPath();
+			if (gameProviderPath != null) knownModPaths.add(gameProviderPath.toAbsolutePath().normalize());
+
 			for (String pathName : System.getProperty("java.class.path", "").split(File.pathSeparator)) {
 				if (pathName.isEmpty() || pathName.endsWith("*")) continue;
 
 				Path path = Paths.get(pathName).toAbsolutePath().normalize();
 
-				if (Files.isDirectory(path) && knownModPaths.add(path)) {
+				if (FasterFiles.isDirectory(path) && knownModPaths.add(path)) {
 					QuiltLauncherBase.getLauncher().addToClassPath(path);
 				}
 			}
@@ -949,7 +1041,7 @@ public final class QuiltLoaderImpl {
 
 				Path path = mod.getPath(accessWidener);
 
-				if (!Files.isRegularFile(path)) {
+				if (!FasterFiles.isRegularFile(path)) {
 					throw new RuntimeException("Failed to find accessWidener file from mod " + mod.metadata().id() + " '" + accessWidener + "'");
 				}
 
@@ -967,37 +1059,8 @@ public final class QuiltLoaderImpl {
 			throw new RuntimeException("Cannot instantiate mods when not frozen!");
 		}
 
-		if (gameInstance != null && QuiltLauncherBase.getLauncher() instanceof Knot) {
-			ClassLoader gameClassLoader = gameInstance.getClass().getClassLoader();
-			ClassLoader targetClassLoader = QuiltLauncherBase.getLauncher().getTargetClassLoader();
-			boolean matchesKnot = (gameClassLoader == targetClassLoader);
-			boolean containsKnot = false;
-
-			if (matchesKnot) {
-				containsKnot = true;
-			} else {
-				gameClassLoader = gameClassLoader.getParent();
-
-				while (gameClassLoader != null && gameClassLoader.getParent() != gameClassLoader) {
-					if (gameClassLoader == targetClassLoader) {
-						containsKnot = true;
-					}
-
-					gameClassLoader = gameClassLoader.getParent();
-				}
-			}
-
-			if (!matchesKnot) {
-				if (containsKnot) {
-					Log.info(LogCategory.KNOT, "Environment: Target class loader is parent of game class loader.");
-				} else {
-					Log.warn(LogCategory.KNOT, "\n\n* CLASS LOADER MISMATCH! THIS IS VERY BAD AND WILL PROBABLY CAUSE WEIRD ISSUES! *\n"
-							+ " - Expected game class loader: %s\n"
-							+ " - Actual game class loader: %s\n"
-							+ "Could not find the expected class loader in game class loader parents!\n",
-							QuiltLauncherBase.getLauncher().getTargetClassLoader(), gameClassLoader);
-				}
-			}
+		if (gameInstance != null) {
+			QuiltLauncherBase.getLauncher().validateGameClassLoader(gameInstance);
 		}
 
 		this.gameInstance = gameInstance;

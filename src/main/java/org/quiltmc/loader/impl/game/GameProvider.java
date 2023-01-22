@@ -24,7 +24,8 @@ import java.util.Objects;
 
 import net.fabricmc.loader.api.metadata.ModMetadata;
 import org.quiltmc.loader.impl.util.LoaderUtil;
-
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.entrypoint.GameTransformer;
 import org.quiltmc.loader.impl.metadata.qmj.InternalModMetadata;
 
@@ -32,6 +33,7 @@ import org.quiltmc.loader.impl.launch.common.QuiltLauncher;
 
 import org.quiltmc.loader.impl.util.Arguments;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public interface GameProvider {
 	String getGameId();
 	String getGameName();
@@ -50,6 +52,9 @@ public interface GameProvider {
 	GameTransformer getEntrypointTransformer();
 	void unlockClassPath(QuiltLauncher launcher);
 	void launch(ClassLoader loader);
+	default boolean isGameClass(String name) {
+		return true;
+	}
 
 	default boolean displayCrash(Throwable exception, String context) {
 		return false;

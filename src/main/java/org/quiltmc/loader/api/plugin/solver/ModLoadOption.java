@@ -17,10 +17,12 @@
 package org.quiltmc.loader.api.plugin.solver;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.jetbrains.annotations.Nullable;
-import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.api.plugin.ModContainerExt;
 import org.quiltmc.loader.api.plugin.ModMetadataExt;
@@ -30,8 +32,13 @@ import org.quiltmc.loader.api.plugin.QuiltPluginContext;
 import org.quiltmc.loader.api.plugin.gui.PluginGuiIcon;
 import org.quiltmc.loader.api.plugin.gui.PluginGuiTreeNode;
 import org.quiltmc.loader.api.plugin.gui.QuiltLoaderText;
+import org.quiltmc.loader.impl.filesystem.QuiltJoinedFileSystem;
+import org.quiltmc.loader.impl.filesystem.QuiltJoinedPath;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 /** A special type of {@link LoadOption} that represents a mod. */
+@QuiltLoaderInternal(QuiltLoaderInternalType.PLUGIN_API)
 public abstract class ModLoadOption extends LoadOption {
 
 	/** @return The plugin context for the plugin that loaded this mod. */
@@ -127,4 +134,23 @@ public abstract class ModLoadOption extends LoadOption {
 	/** Older temporary method for error descriptions */
 	@Deprecated
 	public abstract String getSpecificInfo();
+
+	public boolean couldResourcesChange() {
+		Path from = from();
+		if (from.getFileSystem() == FileSystems.getDefault() && FasterFiles.isDirectory(from)) {
+			return true;
+		} else if (from instanceof QuiltJoinedPath) {
+			QuiltJoinedPath path = (QuiltJoinedPath) from;
+			QuiltJoinedFileSystem fs = path.getFileSystem();
+			for (int i = 0; i < fs.getBackingPathCount(); i++) {
+				Path backingPath = fs.getBackingPath(i, path);
+				if (backingPath.getFileSystem() == FileSystems.getDefault()) {
+					return true;
+				}
+			}
+			return true;
+		} else {
+			return false;
+		}
+	}
 }

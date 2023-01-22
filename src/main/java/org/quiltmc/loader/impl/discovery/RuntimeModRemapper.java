@@ -37,11 +37,15 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.objectweb.asm.commons.Remapper;
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.plugin.solver.ModLoadOption;
+import org.quiltmc.loader.impl.QuiltLoaderImpl;
 import org.quiltmc.loader.impl.filesystem.QuiltMemoryFileSystem;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncher;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
 import org.quiltmc.loader.impl.util.FileSystemUtil;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.mappings.TinyRemapperMappingsHelper;
 
@@ -54,12 +58,46 @@ import net.fabricmc.tinyremapper.NonClassCopyMode;
 import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public final class RuntimeModRemapper {
 
 	public static void remap(Path cache, List<ModLoadOption> modList) {
 		List<ModLoadOption> modsToRemap = modList.stream()
 				.filter(modLoadOption -> modLoadOption.namespaceMappingFrom() != null)
 				.collect(Collectors.toList());
+
+		// Copy everything that's not in the modsToRemap list
+		for (ModLoadOption mod : modList) {
+			if (mod.namespaceMappingFrom() == null && mod.needsChasmTransforming() && !QuiltLoaderImpl.MOD_ID.equals(mod.id())) {
+
+				final boolean onlyClassFiles = mod.couldResourcesChange();
+
+				Path modSrc = mod.resourceRoot();
+				Path modDst = cache.resolve(mod.id());
+				try {
+					Files.walk(modSrc).forEach(path -> {
+						if (!FasterFiles.isRegularFile(path)) {
+							// Only copy class files, since those files are the only files modified by chasm
+							return;
+						}
+						if (onlyClassFiles && !path.getFileName().toString().endsWith(".class")) {
+							// Only copy class files, since those files are the only files modified by chasm
+							return;
+						}
+						Path sub = modSrc.relativize(path);
+						Path dst = modDst.resolve(sub.toString());
+						try {
+							FasterFiles.createDirectories(dst.getParent());
+							Files.copy(path, dst);
+						} catch (IOException e) {
+							throw new Error(e);
+						}
+					});
+				} catch (IOException io) {
+					throw new Error(io);
+				}
+			}
+		}
 
 		if (modsToRemap.isEmpty()) {
 			return;

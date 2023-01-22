@@ -33,6 +33,8 @@ import org.quiltmc.loader.api.plugin.solver.Rule;
 import org.quiltmc.loader.api.plugin.solver.RuleContext;
 import org.quiltmc.loader.api.plugin.solver.RuleDefiner;
 import org.quiltmc.loader.impl.discovery.ModSolvingError;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.log.Log;
 import org.quiltmc.loader.impl.util.log.LogCategory;
@@ -61,6 +63,7 @@ import org.quiltmc.loader.util.sat4j.specs.TimeoutException;
  * <li>Perform optimisation of the rules.</li>
  * </ol>
  * This is (mostly) separated from any more specific rules */
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public class Sat4jWrapper implements RuleContext {
 
 	private static final boolean LOG = Boolean.getBoolean(SystemProperties.DEBUG_MOD_SOLVING);
@@ -98,7 +101,7 @@ public class Sat4jWrapper implements RuleContext {
 
 	private volatile boolean cancelled = false;
 
-	private final Map<LoadOption, Integer> optionToWeight = new HashMap<>();
+	private final Map<LoadOption, Map<Rule, Integer>> optionToWeight = new HashMap<>();
 	private final Map<Rule, List<RuleDefinition>> ruleToDefinitions = new HashMap<>();
 
 	private final Map<LoadOption, Integer> optionToIndex = new HashMap<>();
@@ -130,20 +133,14 @@ public class Sat4jWrapper implements RuleContext {
 	// # Defining #
 	// ############
 
-	/** Adds a new {@link LoadOption}, without any weight. */
+	/** Adds a new {@link LoadOption}.*/
 	@Override
 	public void addOption(LoadOption option) {
-		addOption(option, 0);
-	}
-
-	/** Adds a new {@link LoadOption}, with the given weight. */
-	@Override
-	public void addOption(LoadOption option, int weight) {
 		validateCanAdd();
-		optionToWeight.put(option, weight);
+		optionToWeight.put(option, new HashMap<>());
 
 		if (LOG) {
-			Log.info(CATEGORY, "Adding option " + option + " with weight " + weight);
+			Log.info(CATEGORY, "Adding option " + option);
 		}
 
 		List<Rule> rulesToRedefine = new ArrayList<>();
@@ -155,7 +152,7 @@ public class Sat4jWrapper implements RuleContext {
 		}
 
 		if (LOG) {
-			Log.info(CATEGORY, "Finished adding option " + option + " with weight " + weight);
+			Log.info(CATEGORY, "Finished adding option " + option);
 		}
 
 		for (Rule rule : rulesToRedefine) {
@@ -164,10 +161,17 @@ public class Sat4jWrapper implements RuleContext {
 	}
 
 	@Override
-	public void setWeight(LoadOption option, int weight) {
+	public void setWeight(LoadOption option, Rule key, int weight) {
 		validateCanAdd();
-		if (optionToWeight.containsKey(option)) {
-			optionToWeight.put(option, weight);
+		if (option instanceof AliasedLoadOption) {
+			LoadOption target = ((AliasedLoadOption) option).getTarget();
+			if (target != null) {
+				option = target;
+			}
+		}
+		Map<Rule, Integer> weightMap = optionToWeight.get(option);
+		if (weightMap != null) {
+			weightMap.put(key, weight);
 		} else {
 			throw new IllegalArgumentException("Unknown LoadOption " + option);
 		}
@@ -511,13 +515,18 @@ public class Sat4jWrapper implements RuleContext {
 			IVecInt vars = new VecInt(count);
 			IVec<BigInteger> coeffs = new Vec<>(count);
 
-			for (Map.Entry<LoadOption, Integer> entry : optionToWeight.entrySet()) {
-				Integer value = optionToIndex.get(entry.getKey());
+			for (LoadOption option : optionToWeight.keySet()) {
+				Map<Rule, Integer> weights = optionToWeight.get(option);
+				Integer value = optionToIndex.get(option);
 				if (value == null) {
-					throw new NullPointerException(entry.getKey() + " isn't in the optionToIndex map!");
+					throw new NullPointerException(option + " isn't in the optionToIndex map!");
 				}
 				vars.push(value);
-				coeffs.push(BigInteger.valueOf(entry.getValue()));
+				int totalWeight = 0;
+				for (int weight : weights.values()) {
+					totalWeight += weight;
+				}
+				coeffs.push(BigInteger.valueOf(totalWeight));
 			}
 
 			optimiser.setObjectiveFunction(new ObjectiveFunction(vars, coeffs));

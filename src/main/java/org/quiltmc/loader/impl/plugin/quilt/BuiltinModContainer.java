@@ -21,15 +21,26 @@ import java.nio.file.Path;
 import org.quiltmc.loader.api.plugin.ModMetadataExt;
 import org.quiltmc.loader.api.plugin.QuiltPluginContext;
 import org.quiltmc.loader.impl.plugin.base.InternalModContainerBase;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class BuiltinModContainer extends InternalModContainerBase {
 
-	public BuiltinModContainer(QuiltPluginContext pluginContext, ModMetadataExt metadata, Path from, Path resourceRoot) {
+	final boolean addToClasspath;
+
+	public BuiltinModContainer(QuiltPluginContext pluginContext, ModMetadataExt metadata, Path from, Path resourceRoot, boolean addToClasspath) {
 		super(pluginContext, metadata, from, resourceRoot);
+		this.addToClasspath = addToClasspath;
 	}
 
 	@Override
 	public BasicSourceType getSourceType() {
 		return BasicSourceType.BUILTIN;
+	}
+
+	@Override
+	public boolean shouldAddToQuiltClasspath() {
+		return addToClasspath;
 	}
 }

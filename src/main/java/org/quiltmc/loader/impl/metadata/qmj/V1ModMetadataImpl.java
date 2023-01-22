@@ -22,15 +22,20 @@ import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.LoaderValue;
+import org.quiltmc.loader.api.ModContainer;
 import org.quiltmc.loader.api.ModContributor;
 import org.quiltmc.loader.api.ModDependency;
 import org.quiltmc.loader.api.ModLicense;
 import org.quiltmc.loader.api.Version;
+import org.quiltmc.loader.impl.metadata.FabricLoaderModMetadata;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
 import net.fabricmc.loader.api.metadata.ModEnvironment;
 
 import net.fabricmc.api.EnvType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 final class V1ModMetadataImpl implements InternalModMetadata {
 	private final JsonLoaderValue.ObjectImpl root;
 	/* Required fields */
@@ -58,6 +63,10 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 	private final Collection<String> mixins;
 	private final Collection<String> accessWideners;
 	private final ModEnvironment environment;
+
+	private QuiltModMetadataWrapperFabric cache2fabricNoContainer;
+	private QuiltModMetadataWrapperFabric cache2fabricWithContainer;
+
 	V1ModMetadataImpl(
 			V1ModMetadataBuilder builder
 			// TODO: Custom objects - long term
@@ -119,6 +128,22 @@ final class V1ModMetadataImpl implements InternalModMetadata {
 		this.mixins = Collections.unmodifiableCollection(builder.mixins);
 		this.accessWideners = Collections.unmodifiableCollection(builder.accessWideners);
 		this.environment = builder.env;
+	}
+
+	@Override
+	public FabricLoaderModMetadata asFabricModMetadata() {
+		if (cache2fabricNoContainer == null) {
+			cache2fabricNoContainer = new QuiltModMetadataWrapperFabric(this, null);
+		}
+		return cache2fabricNoContainer;
+	}
+
+	@Override
+	public FabricLoaderModMetadata asFabricModMetadata(ModContainer quiltContainer) {
+		if (cache2fabricWithContainer == null) {
+			cache2fabricNoContainer = cache2fabricWithContainer = new QuiltModMetadataWrapperFabric(this, quiltContainer);
+		}
+		return cache2fabricWithContainer;
 	}
 
 	@Override

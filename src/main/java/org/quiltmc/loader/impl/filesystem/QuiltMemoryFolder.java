@@ -16,11 +16,18 @@
 
 package org.quiltmc.loader.impl.filesystem;
 
+import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
+
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 abstract class QuiltMemoryFolder extends QuiltMemoryEntry {
 
 	private QuiltMemoryFolder(QuiltMemoryPath path) {
@@ -32,12 +39,19 @@ abstract class QuiltMemoryFolder extends QuiltMemoryEntry {
 		return new QuiltFileAttributes(path, QuiltFileAttributes.SIZE_DIRECTORY);
 	}
 
+	protected abstract Collection<? extends Path> getChildren();
+
 	public static final class ReadOnly extends QuiltMemoryFolder {
 		final QuiltMemoryPath[] children;
 
 		public ReadOnly(QuiltMemoryPath path, QuiltMemoryPath[] children) {
 			super(path);
 			this.children = children;
+		}
+
+		@Override
+		protected Collection<? extends Path> getChildren() {
+			return Collections.unmodifiableCollection(Arrays.asList(children));
 		}
 	}
 
@@ -46,6 +60,11 @@ abstract class QuiltMemoryFolder extends QuiltMemoryEntry {
 
 		public ReadWrite(QuiltMemoryPath path) {
 			super(path);
+		}
+
+		@Override
+		protected Collection<? extends Path> getChildren() {
+			return Collections.unmodifiableCollection(children);
 		}
 	}
 }

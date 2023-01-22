@@ -16,42 +16,48 @@
 
 package org.quiltmc.loader.impl.filesystem;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.file.ClosedFileSystemException;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
-import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
-import java.nio.file.WatchService;
 import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.FileAttributeView;
-import java.nio.file.attribute.FileOwnerAttributeView;
 import java.nio.file.attribute.FileTime;
-import java.nio.file.attribute.UserPrincipal;
-import java.nio.file.attribute.UserPrincipalLookupService;
 import java.nio.file.spi.FileSystemProvider;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.quiltmc.loader.api.CachedFileSystem;
+import org.quiltmc.loader.api.FasterFiles;
+import org.quiltmc.loader.impl.util.FileUtil;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMemoryFileSystem, QuiltMemoryPath> implements CachedFileSystem {
 
 	private static final Set<String> FILE_ATTRS = Collections.singleton("basic");
@@ -71,7 +77,7 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 	private QuiltMemoryFileSystem(String name, boolean uniquify, Map<QuiltMemoryPath, QuiltMemoryEntry> fileMap) {
 		super(QuiltMemoryFileSystem.class, QuiltMemoryPath.class, name, uniquify);
 		this.files = fileMap;
-		QuiltMemoryFileSystemProvider.register(this);
+		QuiltMemoryFileSystemProvider.PROVIDER.register(this);
 	}
 
 	@Override
@@ -89,14 +95,14 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 	public synchronized void close() {
 		if (openState == OpenState.OPEN) {
 			openState = OpenState.CLOSED;
-			QuiltMemoryFileSystemProvider.closeFileSystem(this);
+			QuiltMemoryFileSystemProvider.PROVIDER.closeFileSystem(this);
 		}
 	}
 
 	synchronized void beginMove() {
 		if (openState == OpenState.OPEN) {
 			openState = OpenState.MOVING;
-			QuiltMemoryFileSystemProvider.closeFileSystem(this);
+			QuiltMemoryFileSystemProvider.PROVIDER.closeFileSystem(this);
 		}
 	}
 
@@ -116,14 +122,68 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 		return FILE_ATTRS;
 	}
 
+	// FasterFileSystem
+
+	@Override
+	public boolean isSymbolicLink(Path path) {
+		// Not supported
+		return false;
+	}
+
+	@Override
+	public boolean isDirectory(Path path, LinkOption... options) {
+		return files.get(path.toAbsolutePath().normalize()) instanceof QuiltMemoryFolder;
+	}
+
+	@Override
+	public boolean isRegularFile(Path path, LinkOption[] options) {
+		return files.get(path.toAbsolutePath().normalize()) instanceof QuiltMemoryFile;
+	}
+
+	@Override
+	public boolean exists(Path path, LinkOption... options) {
+		return files.containsKey(path.toAbsolutePath().normalize());
+	}
+
+	@Override
+	public boolean notExists(Path path, LinkOption... options) {
+		// Nothing can go wrong, so this is fine
+		return !exists(path, options);
+	}
+
+	@Override
+	public boolean isReadable(Path path) {
+		return exists(path);
+	}
+
+	@Override
+	public boolean isExecutable(Path path) {
+		return exists(path);
+	}
+
+	@Override
+	public Stream<Path> list(Path dir) throws IOException {
+		return getChildren(dir).stream().map(p -> (Path) p);
+	}
+
+	@Override
+	public Collection<? extends Path> getChildren(Path dir) throws IOException {
+		QuiltMemoryEntry entry = files.get(dir.toAbsolutePath().normalize());
+		if (entry instanceof QuiltMemoryFolder) {
+			return ((QuiltMemoryFolder) entry).getChildren();
+		} else {
+			throw new NotDirectoryException(dir.toString());
+		}
+	}
+
 	public BasicFileAttributes readAttributes(QuiltMemoryPath qmp) throws IOException {
 		checkOpen();
-		QuiltMemoryEntry entry = files.get(qmp);
+		QuiltMemoryEntry entry = files.get(qmp.toAbsolutePath().normalize());
 
 		if (entry != null) {
 			return entry.createAttributes();
 		} else {
-			throw new NoSuchFileException(qmp.name);
+			throw new NoSuchFileException(qmp.toString());
 		}
 	}
 
@@ -136,7 +196,8 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 				}
 
 				@Override
-				public void setTimes(FileTime lastModifiedTime, FileTime lastAccessTime, FileTime createTime) throws IOException {
+				public void setTimes(FileTime lastModifiedTime, FileTime lastAccessTime, FileTime createTime)
+					throws IOException {
 					// Unsupported
 					// Since we don't need to throw we won't
 				}
@@ -162,7 +223,7 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 		}
 	}
 
-	public static final class ReadOnly extends QuiltMemoryFileSystem {
+	public static final class ReadOnly extends QuiltMemoryFileSystem implements ReadOnlyFileSystem {
 
 		/** Used to store all file data content in a single byte array. Potentially provides performance gains as we
 		 * don't allocate as many objects (plus it's all packed). Comes with the one-time cost of actually coping all
@@ -185,14 +246,15 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 
 		/** Creates a new read-only {@link FileSystem} that copies every file in the given directory.
 		 *
+		 * @param compress if true then all files will be stored in-memory compressed.
 		 * @throws IOException if any of the files in the given path could not be read. */
-		public ReadOnly(String name, boolean uniquify, Path from) throws IOException {
+		public ReadOnly(String name, boolean uniquify, Path from, boolean compress) throws IOException {
 			super(name, uniquify, new HashMap<>());
 
 			int[] stats = new int[3];
 			stats[STAT_MEMORY] = 60;
 
-			if (!Files.isDirectory(from)) {
+			if (!FasterFiles.isDirectory(from)) {
 				throw new IOException(from + " is not a directory!");
 			}
 
@@ -224,11 +286,8 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 					stats[STAT_MEMORY] += fileName.length() + 28;
 					QuiltMemoryPath childPath = state.folder.resolve(fileName);
 					state.children.add(childPath);
-					QuiltMemoryFile.ReadOnly qmf = QuiltMemoryFile.ReadOnly.create(childPath, Files.readAllBytes(file));
-
-					stats[STAT_UNCOMPRESSED] += qmf.uncompressedSize;
-					stats[STAT_USED] += qmf.byteArray().length;
-					stats[STAT_MEMORY] += qmf.byteArray().length + 16;
+					QuiltMemoryFile.ReadOnly qmf = QuiltMemoryFile.ReadOnly.create(childPath, Files.readAllBytes(file), compress);
+					putFileStats(stats, qmf);
 
 					files.put(childPath, qmf);
 
@@ -254,9 +313,20 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 			uncompressedSize = stats[STAT_UNCOMPRESSED];
 			usedSize = stats[STAT_USED];
 			memorySize = stats[STAT_MEMORY] + ((int) (files.size() * 24 / 0.75f));
+			packedByteArray = pack();
+			fileStore = new QuiltMemoryFileStore.ReadOnly(name, usedSize);
+			fileStoreItr = Collections.singleton(fileStore);
+		}
 
+		private static void putFileStats(int[] stats, QuiltMemoryFile.ReadOnly qmf) {
+			stats[STAT_UNCOMPRESSED] += qmf.uncompressedSize;
+			stats[STAT_USED] += qmf.byteArray().length;
+			stats[STAT_MEMORY] += qmf.byteArray().length + 16;
+		}
+
+		private byte[] pack() {
 			if (PACK_FILE_DATA) {
-				packedByteArray = new byte[stats[STAT_USED]];
+				byte[] packed = new byte[usedSize];
 
 				int pos = 0;
 
@@ -266,22 +336,99 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 					if (entry.getValue() instanceof QuiltMemoryFile.ReadOnly.Absolute) {
 						QuiltMemoryFile.ReadOnly.Absolute abs = (QuiltMemoryFile.ReadOnly.Absolute) entry.getValue();
 						int len = abs.bytesLength();
-						System.arraycopy(abs.byteArray(), 0, packedByteArray, pos, len);
+						System.arraycopy(abs.byteArray(), 0, packed, pos, len);
 						entry.setValue(
-								new QuiltMemoryFile.ReadOnly.Relative(
-										abs.path, abs.isCompressed, abs.uncompressedSize, pos, len
-								)
+							new QuiltMemoryFile.ReadOnly.Relative(
+								abs.path, abs.isCompressed, abs.uncompressedSize, pos, len
+							)
 						);
 						pos += len;
 					}
 				}
-
+				return packed;
 			} else {
-				packedByteArray = null;
+				return null;
 			}
+		}
+
+		/** Creates a new read-only file system that copies every entry of a {@link ZipInputStream} that starts with
+		 * "zipPathPrefix". This is effectively the same as
+		 * {@link QuiltZipFileSystem#QuiltZipFileSystem(String, Path, String)}, but doesn't open files from their
+		 * original location.
+		 * <p>
+		 * Using this is likely to be faster than opening a zip via {@link FileSystems#newFileSystem(Path, ClassLoader)}
+		 * and then copying it with {@link #ReadOnly(String, boolean, Path, boolean)}.
+		 * 
+		 * @param name The name for the new filesystem. This affects URLs that reference this file system.
+		 * @param zipFrom The zip to read from.
+		 * @param zipPathPrefix A prefix for all entries. This should be the empty string to get every entry.
+		 * @param compress If true then entries will be compressed in-memory. Generally slow.
+		 * @throws IOException if {@link ZipInputStream} threw an {@link IOException} while reading entries. */
+		public ReadOnly(String name, ZipInputStream zipFrom, String zipPathPrefix, boolean compress) throws IOException {
+			super(name, true, new HashMap<>());
+
+			int[] stats = new int[3];
+			stats[STAT_MEMORY] = 60;
+
+			Map<QuiltMemoryPath, Set<QuiltMemoryPath>> folders = new HashMap<>();
+
+			ZipEntry entry;
+			while ((entry = zipFrom.getNextEntry()) != null) {
+				String entryName = entry.getName();
+
+				if (!entryName.startsWith(zipPathPrefix)) {
+					continue;
+				}
+				entryName = entryName.substring(zipPathPrefix.length());
+				if (!entryName.startsWith("/")) {
+					entryName = "/" + entryName;
+				}
+
+				QuiltMemoryPath path = getPath(entryName);
+				if (entryName.endsWith("/")) {
+					// Folder, but it might have already been automatically added by a file
+					folders.computeIfAbsent(path, p -> new HashSet<>());
+					putParentFolders(folders, path);
+				} else {
+					// File
+					stats[STAT_MEMORY] += path.name.length() + 28;
+					byte[] bytes = FileUtil.readAllBytes(zipFrom);
+					QuiltMemoryFile.ReadOnly qmf = QuiltMemoryFile.ReadOnly.create(path, bytes, compress);
+					putFileStats(stats, qmf);
+					files.put(path, qmf);
+					putParentFolders(folders, path);
+				}
+			}
+
+			for (Map.Entry<QuiltMemoryPath, Set<QuiltMemoryPath>> folder : folders.entrySet()) {
+				QuiltMemoryPath folderPath = folder.getKey();
+				QuiltMemoryPath[] entries = folder.getValue().toArray(new QuiltMemoryPath[0]);
+				stats[STAT_MEMORY] += folderPath.name.length() + entries.length * 4 + 12;
+				files.put(folderPath, new QuiltMemoryFolder.ReadOnly(folderPath, entries));
+			}
+
+			uncompressedSize = stats[STAT_UNCOMPRESSED];
+			usedSize = stats[STAT_USED];
+			memorySize = stats[STAT_MEMORY] + ((int) (files.size() * 24 / 0.75f));
+			packedByteArray = pack();
 
 			fileStore = new QuiltMemoryFileStore.ReadOnly(name, usedSize);
 			fileStoreItr = Collections.singleton(fileStore);
+		}
+
+		private static void putParentFolders(Map<QuiltMemoryPath, Set<QuiltMemoryPath>> folders, QuiltMemoryPath path) {
+			if (path == null) {
+				return;
+			}
+			QuiltMemoryPath parent = path;
+			QuiltMemoryPath child = path;
+			while ((parent = parent.getParent()) != null) {
+				Set<QuiltMemoryPath> children = folders.computeIfAbsent(parent, p -> new HashSet<>());
+				if (!children.add(child)) {
+					break;
+				}
+				child = parent;
+			}
 		}
 
 		@Override
@@ -368,7 +515,7 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 		public ReadWrite(String name, boolean uniquify, Path from) throws IOException {
 			this(name, uniquify);
 
-			if (!Files.isDirectory(from)) {
+			if (!FasterFiles.isDirectory(from)) {
 				throw new IOException(from + " is not a directory!");
 			}
 
@@ -418,28 +565,28 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 		}
 
 		/** Creates a new read-only version of this file system, copying the entire directory structure and file content
-		 * into it. This also compresses the files (if they can be compressed), and trims every byte array used to store
-		 * files down to the minimum required length. */
-		public QuiltMemoryFileSystem.ReadOnly optimizeToReadOnly(String newName) {
+		 * into it. This also compresses the files if the compress argument is true (and if compression reduces the file
+		 * size), and trims every byte array used to store files down to the minimum required length. */
+		public QuiltMemoryFileSystem.ReadOnly optimizeToReadOnly(String newName, boolean compress) {
 			try {
-				return new ReadOnly(newName, true, root);
+				return new ReadOnly(newName, true, root, compress);
 			} catch (IOException e) {
 				throw new RuntimeException(
-						"For some reason the in-memory file system threw an IOException while reading!", e
+					"For some reason the in-memory file system threw an IOException while reading!", e
 				);
 			}
 		}
 
 		/** Creates a new read-only version of this file system, copying the entire directory structure and file content
-		 * into it. This also compresses the files (if they can be compressed), and trims every byte array used to store
-		 * files down to the minimum required length. */
-		public QuiltMemoryFileSystem.ReadOnly replaceWithReadOnly() {
+		 * into it. This also compresses the files if the compress argument is true (and if compression reduces the file
+		 * size), and trims every byte array used to store files down to the minimum required length. */
+		public QuiltMemoryFileSystem.ReadOnly replaceWithReadOnly(boolean compress) {
 			beginMove();
 			try {
-				return new ReadOnly(name, false, root);
+				return new ReadOnly(name, false, root, compress);
 			} catch (IOException e) {
 				throw new RuntimeException(
-						"For some reason the in-memory file system threw an IOException while reading!", e
+					"For some reason the in-memory file system threw an IOException while reading!", e
 				);
 			} finally {
 				endMove();
@@ -459,6 +606,39 @@ public abstract class QuiltMemoryFileSystem extends QuiltBaseFileSystem<QuiltMem
 		@Override
 		public boolean isPermanentlyReadOnly() {
 			return false;
+		}
+
+		// FasterFileSystem
+
+		@Override
+		public Path createFile(Path path, FileAttribute<?>... attrs) throws IOException {
+			// This is already fairly quick, so don't bother reimplementing it
+			return super.createFile(path, attrs);
+		}
+
+		@Override
+		public Path createDirectories(Path dir, FileAttribute<?>... attrs) throws IOException {
+			dir = dir.toAbsolutePath().normalize();
+			Deque<Path> stack = new ArrayDeque<>();
+			Path p = dir;
+			do {
+				if (isDirectory(p)) {
+					break;
+				} else {
+					stack.push(p);
+				}
+			} while ((p = p.getParent()) != null);
+
+			while (!stack.isEmpty()) {
+				provider().createDirectory(stack.pop(), attrs);
+			}
+
+			return dir;
+		}
+
+		@Override
+		public boolean isWritable(Path path) {
+			return exists(path);
 		}
 	}
 }

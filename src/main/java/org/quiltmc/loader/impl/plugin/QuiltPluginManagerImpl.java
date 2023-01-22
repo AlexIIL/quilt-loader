@@ -18,17 +18,13 @@ package org.quiltmc.loader.impl.plugin;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.lang.reflect.Constructor;
-import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.ProviderNotFoundException;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.spi.FileSystemProvider;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
@@ -52,15 +49,17 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.zip.ZipException;
+import java.util.zip.ZipInputStream;
 
 import org.jetbrains.annotations.Nullable;
+import org.quiltmc.loader.api.FasterFiles;
 import org.quiltmc.loader.api.LoaderValue;
 import org.quiltmc.loader.api.ModDependency;
+import org.quiltmc.loader.api.ModMetadata.ProvidedMod;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.quiltmc.loader.api.Version;
 import org.quiltmc.loader.api.minecraft.MinecraftQuiltLoader;
 import org.quiltmc.loader.api.plugin.ModMetadataExt;
-import org.quiltmc.loader.api.plugin.ModMetadataExt.ProvidedMod;
 import org.quiltmc.loader.api.plugin.NonZipException;
 import org.quiltmc.loader.api.plugin.QuiltLoaderPlugin;
 import org.quiltmc.loader.api.plugin.QuiltPluginContext;
@@ -87,6 +86,7 @@ import org.quiltmc.loader.impl.discovery.ModSolvingError;
 import org.quiltmc.loader.impl.filesystem.QuiltJoinedFileSystem;
 import org.quiltmc.loader.impl.filesystem.QuiltJoinedPath;
 import org.quiltmc.loader.impl.filesystem.QuiltMemoryFileSystem;
+import org.quiltmc.loader.impl.filesystem.QuiltMemoryPath;
 import org.quiltmc.loader.impl.game.GameProvider;
 import org.quiltmc.loader.impl.metadata.qmj.VersionConstraintImpl;
 import org.quiltmc.loader.impl.plugin.base.InternalModContainerBase;
@@ -103,6 +103,8 @@ import org.quiltmc.loader.impl.report.QuiltStringSection;
 import org.quiltmc.loader.impl.solver.ModSolveResultImpl;
 import org.quiltmc.loader.impl.solver.ModSolveResultImpl.LoadOptionResult;
 import org.quiltmc.loader.impl.solver.Sat4jWrapper;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.log.Log;
 import org.quiltmc.loader.impl.util.log.LogCategory;
@@ -114,6 +116,7 @@ import net.fabricmc.api.EnvType;
  * <p>
  * Unlike {@link QuiltLoader} itself, it does make sense to have multiple of these at once: one for loading plugins that
  * will be used, and many more for "simulating" mod loading. */
+@QuiltLoaderInternal(QuiltLoaderInternalType.NEW_INTERNAL)
 public class QuiltPluginManagerImpl implements QuiltPluginManager {
 
 	private static final String QUILT_ID = "quilt_loader";
@@ -124,6 +127,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 	final Version gameVersion;
 
 	private final Path gameDir, configDir, modsDir;
+	private final Path absGameDir, absModsDir;
 	final Map<Path, Path> pathParents = new HashMap<>();
 	final Map<Path, String> customPathNames = new HashMap<>();
 	final Map<String, Integer> allocatedFileSystemIndices = new HashMap<>();
@@ -184,6 +188,8 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 		this.gameDir = gameDir;
 		this.configDir = configDir;
 		this.modsDir = modsDir;
+		this.absGameDir = gameDir.toAbsolutePath().normalize();
+		this.absModsDir = modsDir.toAbsolutePath().normalize();
 
 		this.executor = config.singleThreadedLoading ? null : Executors.newCachedThreadPool();
 		this.mainThreadTasks = config.singleThreadedLoading ? new ArrayDeque<>() : new ConcurrentLinkedQueue<>();
@@ -216,56 +222,12 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 	}
 
 	private Path loadZip0(Path zip) throws IOException, NonZipException {
-		try {
-			FileSystem fileSystem;
-
-			try {
-				// Cast to ClassLoader since newer versions of java added a conflicting method
-				// Java 8 - just "newFileSystem(Path, ClassLoader)"
-				// Java 13 - added "newFileSystem(Path, Map)"
-				fileSystem = FileSystems.newFileSystem(zip, (ClassLoader) null);
-			} catch (ProviderNotFoundException nfe) {
-				// JDK 10 and below only permit making a zip file system from files on the default FS
-				// However the code still works even if we're not on the default FS, so go around the provider.
-
-				// Since everything that works on 9 and 10 *hopefully* works on 11, we're going to ignore those
-				// versions and special-case a fix for java 8
-				try {
-					Class<?> zfsp = Class.forName("com.sun.nio.zipfs.ZipFileSystemProvider");
-
-					fileSystem = null;
-
-					for (FileSystemProvider provider : FileSystemProvider.installedProviders()) {
-						if (!provider.getClass().isAssignableFrom(zfsp)) {
-							continue;
-						}
-						Class<?> zfs = Class.forName("com.sun.nio.zipfs.ZipFileSystem");
-						Constructor<?> ctor = zfs.getDeclaredConstructor(zfsp, Path.class, Map.class);
-						ctor.setAccessible(true);
-						fileSystem = (FileSystem) ctor.newInstance(provider, zip, Collections.emptyMap());
-					}
-
-					if (fileSystem == null) {
-						nfe.addSuppressed(new Error("Failed to find the zip file system provider!"));
-						throw nfe;
-					}
-
-				} catch (ReflectiveOperationException e) {
-					nfe.addSuppressed(e);
-					throw nfe;
-				}
-			}
-
-			for (Path root : fileSystem.getRootDirectories()) {
-				Path qRoot = copyToReadOnlyFileSystem(zip.getFileName().toString(), root);
-				pathParents.put(qRoot, zip);
-				return qRoot;
-			}
-
-			throw new IOException("No root directories found in " + describePath(zip));
-
-		} catch (ProviderNotFoundException e) {
-			String name = zip.getFileName().toString();
+		String name = zip.getFileName().toString();
+		try (ZipInputStream zipFrom = new ZipInputStream(Files.newInputStream(zip))) {
+			QuiltMemoryPath qRoot = new QuiltMemoryFileSystem.ReadOnly(name, zipFrom, "", false).getRoot();
+			pathParents.put(qRoot, zip);
+			return qRoot;
+		} catch (IOException e) {
 			if (name.endsWith(".zip") || name.endsWith(".jar")) {
 				// Something probably went wrong while trying to load them as zips
 				throw new IOException("Failed to read " + zip + " as a zip file!", e);
@@ -281,8 +243,8 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 	}
 
 	@Override
-	public Path copyToReadOnlyFileSystem(String name, Path folderRoot) throws IOException {
-		return new QuiltMemoryFileSystem.ReadOnly(name, true, folderRoot).getRoot();
+	public Path copyToReadOnlyFileSystem(String name, Path folderRoot, boolean compress) throws IOException {
+		return new QuiltMemoryFileSystem.ReadOnly(name, true, folderRoot, compress).getRoot();
 	}
 
 	// #################
@@ -301,6 +263,18 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 
 		if (path.getNameCount() > 0) {
 			sb.append(path.getFileName().toString());
+		}
+
+		if (path instanceof QuiltJoinedPath) {
+			Collection<Path> parents = getJoinedPaths(((QuiltJoinedPath) path).getFileSystem().getRoot());
+			sb.insert(0, "]/");
+			for (Path p : parents) {
+				sb.insert(0, describePath(p));
+				sb.insert(0, ";");
+			}
+			// Replace the first semicolon with a square bracket
+			sb.replace(0, 1, "[");
+			return sb.toString();
 		}
 
 		Path p = path;
@@ -342,15 +316,15 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 	}
 
 	@Override
-	public Path getRealContainingFile(Path file) {
+	public Optional<Path> getRealContainingFile(Path file) {
 		Path next = file;
 		while (next.getFileSystem() != FileSystems.getDefault()) {
 			next = getParent(next);
 			if (next == null) {
-				return null;
+				return Optional.empty();
 			}
 		}
-		return next;
+		return Optional.of(next);
 	}
 
 	// #################
@@ -611,13 +585,21 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 		// TODO: What other loader state do we need?
 		pluginState.lines("");
 
-		QuiltStringSection modTable = report.addStringSection("Mod Table", 100);
-		appendModTable(modTable::lines);
-		modTable.setShowInLogs(false);
+		try {
+			QuiltStringSection modTable = report.addStringSection("Mod Table", 100);
+			modTable.setShowInLogs(false);
+			appendModTable(modTable::lines);
+		} catch (Throwable e) {
+			report.addStacktraceSection("Crash while gathering mod table", 100, e);
+		}
 
-		QuiltStringSection modDetails = report.addStringSection("Mod Details", 100);
-		appendModDetails(modDetails::lines);
-		modDetails.setShowInLogs(false);
+		try {
+			QuiltStringSection modDetails = report.addStringSection("Mod Details", 100);
+			modDetails.setShowInLogs(false);
+			appendModDetails(modDetails::lines);
+		} catch (Throwable e) {
+			report.addStacktraceSection("Crash while gathering mod details", 100, e);
+		}
 
 		populateModsGuiTab(null);
 
@@ -689,8 +671,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 
 			for (List<Path> paths : sourcePaths) {
 				for (int i = 0; i < paths.size(); i++) {
-					Path path = paths.get(i);
-					String pathStr = (path.startsWith(modsDir) ? "<mods>/" + modsDir.relativize(path) : path).toString();
+					String pathStr = QuiltLoaderImpl.prefixPath(absGameDir, absModsDir, paths.get(i));
 					if (maxSourcePathLengths.size() <= i) {
 						int old = (i == 0 ? "File(s)" : "Sub-Files").length();
 						maxSourcePathLengths.add(Math.max(old, pathStr.length() + 1));
@@ -793,6 +774,10 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 						sbTab.append(" ");
 					}
 					sbTab.append(" | ");
+					for (int i = 0; i < maxNameLength; i++) {
+						sbTab.append(" ");
+					}
+					sbTab.append(" | ");
 					for (int i = 0; i < maxIdLength; i++) {
 						sbTab.append(" ");
 					}
@@ -810,8 +795,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 					sbTab.append(" | ");
 					final String pathStr;
 					if (pathIndex < paths.size()) {
-						Path path = paths.get(pathIndex);
-						pathStr = path.startsWith(modsDir) ? "<mods>/" + modsDir.relativize(path) : path.toString();
+						pathStr = QuiltLoaderImpl.prefixPath(absGameDir, absModsDir, paths.get(pathIndex));
 					} else {
 						pathStr = "";
 					}
@@ -855,7 +839,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 			return a.toAbsolutePath().toString().compareTo(b.toAbsolutePath().toString());
 		};
 		Map<Path, Set<Path>> pathMap = new TreeMap<>(pathComparator);
-		Set<Path> rootFsPaths = Collections.newSetFromMap(new TreeMap<>());
+		Set<Path> rootFsPaths = Collections.newSetFromMap(new TreeMap<>(pathComparator));
 
 		Map<ModLoadOption, List<String>> insideBox = new HashMap<>();
 
@@ -907,7 +891,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 				while ((parentFile = parentFile.getParent()) != null) {
 					parent = parentFile;
 				}
-				Path realParent = getParent(parent);
+				Path realParent = parent == null ? null : getParent(parent);
 				if (realParent == null) {
 					rootFsPaths.add(file);
 					break;
@@ -919,7 +903,18 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 		}
 
 		for (Path root : rootFsPaths) {
-			to.accept(root.toString() + ": ");
+
+			if (isJoinedPath(root)) {
+				Collection<Path> roots = getJoinedPaths(root);
+				to.accept("Joined path [" + roots.size() + "]:");
+				for (Path in : roots) {
+					to.accept(" - '" + QuiltLoaderImpl.prefixPath(absGameDir, absModsDir, in) + "'");
+				}
+				to.accept("mod:");
+			} else {
+				to.accept(QuiltLoaderImpl.prefixPath(absGameDir, absModsDir, root) + ":");
+			}
+
 			for (String line : processDetail(pathMap, insideBox, root, 0)) {
 				to.accept(line);
 			}
@@ -1083,10 +1078,10 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 				path = paths.get(0);
 			}
 
-			if (Files.exists(path)) {
+			if (FasterFiles.exists(path)) {
 				String name = describePath(path);
 				PluginGuiTreeNode clNode = classpathRoot.addChild(QuiltLoaderText.of(name), SortOrder.ALPHABETICAL_ORDER);
-				if (Files.isDirectory(path)) {
+				if (FasterFiles.isDirectory(path)) {
 					clNode.mainIcon(clNode.manager().iconFolder());
 				}
 				scanModFile(path, new ModLocationImpl(true, true), clNode);
@@ -1750,7 +1745,7 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 			return;
 		}
 
-		if (Files.isDirectory(file)) {
+		if (FasterFiles.isDirectory(file)) {
 			if (this.config.singleThreadedLoading) {
 				scanFolderAsMod(file, location, guiNode);
 			} else {
@@ -1784,8 +1779,10 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 			error.appendDescription(QuiltLoaderText.translate("gui.error.zipexception.desc.0", describePath(file)));
 			error.appendDescription(QuiltLoaderText.translate("gui.error.zipexception.desc.1"));
 			error.appendThrowable(e);
-			error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), getRealContainingFile(file))
-				.icon(guiManager.iconZipFile());
+			getRealContainingFile(file).ifPresent(real -> {
+				error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), real)
+					.icon(guiManager.iconZipFile());
+			});
 
 			guiNode.addChild(QuiltLoaderText.translate("gui.error.zipexception", e.getMessage()))// TODO: translate
 				.setError(e, error);
@@ -1797,8 +1794,10 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 			error.appendReportText("Failed to read " + describePath(file) + "!");
 			error.appendDescription(QuiltLoaderText.translate("gui.error.ioexception.desc.0", describePath(file)));
 			error.appendThrowable(e);
-			error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), getRealContainingFile(file))
-				.icon(guiManager.iconZipFile());
+			getRealContainingFile(file).ifPresent(real -> {
+				error.addFileViewButton(QuiltLoaderText.translate("button.view_file"), real)
+					.icon(guiManager.iconZipFile());
+			});
 
 			guiNode.addChild(QuiltLoaderText.translate("gui.error.ioexception", e.getMessage()))// TODO: translate
 				.setError(e, error);
@@ -1898,11 +1897,11 @@ public class QuiltPluginManagerImpl implements QuiltPluginManager {
 				return;
 			}
 
-			Path containingFile = getRealContainingFile(file);
-			QuiltLoaderText title = QuiltLoaderText.translate("error.unhandled_mod_file.title", describePath(containingFile));
+			Optional<Path> containingFile = getRealContainingFile(file);
+			QuiltLoaderText title = QuiltLoaderText.translate("error.unhandled_mod_file.title", describePath(containingFile.isPresent() ? containingFile.get() : file));
 			QuiltPluginError error = reportError(theQuiltPluginContext, title);
 			error.appendDescription(QuiltLoaderText.translate("error.unhandled_mod_file.desc"));
-			error.addFileViewButton(QuiltLoaderText.translate("button.view_file", containingFile.getFileName()), containingFile);
+			containingFile.ifPresent(real -> error.addFileViewButton(QuiltLoaderText.translate("button.view_file", real.getFileName()), real));
 			error.appendReportText("No plugin could load " + describePath(file));
 			guiNode.addChild(QuiltLoaderText.translate("error.unhandled_mod_file"))
 				.setError(null, error);

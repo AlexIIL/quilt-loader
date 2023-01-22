@@ -23,7 +23,12 @@ import org.quiltmc.loader.api.ModContainer;
 import org.quiltmc.loader.api.QuiltLoader;
 import org.quiltmc.loader.impl.filesystem.QuiltClassPath;
 import org.quiltmc.loader.impl.game.GameProvider;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
+import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.UrlUtil;
+import org.quiltmc.loader.impl.util.log.Log;
+import org.quiltmc.loader.impl.util.log.LogCategory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,9 +40,12 @@ import java.nio.file.Path;
 import java.security.CodeSource;
 import java.security.SecureClassLoader;
 import java.util.Enumeration;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterface {
 	private static class DynamicURLClassLoader extends URLClassLoader {
 		private DynamicURLClassLoader(URL[] urls) {
@@ -84,11 +92,16 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 
 	@Override
 	public URL getResource(String name) {
+		return getResource(name, true);
+	}
+
+	@Override
+	public URL getResource(String name, boolean allowFromParent) {
 		Objects.requireNonNull(name);
 
 		URL url = findResource(name);
 
-		if (url == null) {
+		if (url == null && allowFromParent) {
 			url = originalLoader.getResource(name);
 		}
 
@@ -138,15 +151,19 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 	public Enumeration<URL> getResources(String name) throws IOException {
 		Objects.requireNonNull(name);
 
-		// Since we want to get *all* the resources, and QuiltClassPath only caches one per name
-		// we need to skip it anyway
-		Enumeration<URL> first = fakeLoader.getResources(name);
+		List<Path> fromPaths = paths.getResources(name);
+		Enumeration<URL> first = minimalLoader.getResources(name);
 		Enumeration<URL> second = originalLoader.getResources(name);
 		return new Enumeration<URL>() {
+			Iterator<Path> iterator = fromPaths.iterator();
 			Enumeration<URL> current = first;
 
 			@Override
 			public boolean hasMoreElements() {
+				if (iterator.hasNext()) {
+					return true;
+				}
+
 				if (current == null) {
 					return false;
 				}
@@ -164,6 +181,14 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 
 			@Override
 			public URL nextElement() {
+				if (iterator.hasNext()) {
+					Path path = iterator.next();
+					try {
+						return UrlUtil.asUrl(path);
+					} catch (MalformedURLException e) {
+						throw new IllegalStateException("Failed to turn the path " + path.getClass() + " " + path + " into a url!", e);
+					}
+				}
 				if (current == null) {
 					return null;
 				}
@@ -183,23 +208,19 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 	}
 
 	@Override
+	public void resolveClassFwd(Class<?> c) {
+		resolveClass(c);
+	}
+
+	@Override
+	public Class<?> findLoadedClassFwd(String name) {
+		return findLoadedClass(name);
+	}
+
+	@Override
 	protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
 		synchronized (getClassLoadingLock(name)) {
-			Class<?> c = findLoadedClass(name);
-
-			if (c == null) {
-				c = delegate.tryLoadClass(name, false);
-
-				if (c == null) {
-					c = originalLoader.loadClass(name);
-				}
-			}
-
-			if (resolve) {
-				resolveClass(c);
-			}
-
-			return c;
+			return delegate.loadClass(name, originalLoader, null, resolve);
 		}
 	}
 
@@ -219,9 +240,11 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 				if (c == null) {
 					throw new ClassNotFoundException("can't find class "+name);
 				}
-			}
 
-			resolveClass(c);
+				((KnotBaseClassLoader) c.getClassLoader()).resolveClassFwd(c);
+			} else {
+				resolveClass(c);
+			}
 
 			return c;
 		}
@@ -279,23 +302,112 @@ class KnotClassLoader extends SecureClassLoader implements KnotClassLoaderInterf
 
 	@Override
 	public Class<?> defineClassFwd(String name, byte[] b, int off, int len, CodeSource cs) {
-		Class<?> clazz = super.defineClass(name, b, off, len, cs);
-		if (Boolean.getBoolean("temp.alexiil.debug_class_to_mod_container")) {
-			Optional<ModContainer> modContainer = QuiltLoader.getModContainer(clazz);
+		return super.defineClass(name, b, off, len, cs);
+	}
 
-			StringBuilder text = new StringBuilder(clazz.toString());
-			while (text.length() < 100) {
-				text.append(" ");
-			}
-			text.append(modContainer.isPresent() ? modContainer.get().metadata().id() : "?");
-			text.append("\n");
-			System.out.print(text.toString());
-		}
+	@Override
+	public KnotSeparateClassLoader createSeparateClassLoader(KnotClassLoaderKey key) {
+		return new Separate(this, key); 
+	}
 
-		return clazz;
+	@Override
+	public String toString() {
+		return "KnotClassLoader[ROOT]";
 	}
 
 	static {
 		registerAsParallelCapable();
+	}
+
+	private static final class Separate extends SecureClassLoader implements KnotSeparateClassLoader {
+		static {
+			registerAsParallelCapable();
+		}
+
+		final KnotClassLoader container;
+		final KnotClassLoaderKey key;
+
+		Separate(KnotClassLoader container, KnotClassLoaderKey key) {
+			this.container = container;
+			this.key = key;
+		}
+
+		@Override
+		public KnotClassLoaderKey key() {
+			return key;
+		}
+
+		@Override
+		public String toString() {
+			return "KnotClassLoader.Separate[" + key + "]";
+		}
+
+		@Override
+		public KnotClassLoaderInterface getBaseClassLoader() {
+			return container;
+		}
+
+		@Override
+		protected URL findResource(String name) {
+			return container.findResource(name);
+		}
+
+		@Override
+		public InputStream getResourceAsStream(String name) {
+			return container.getResourceAsStream(name);
+		}
+
+		@Override
+		public URL getResource(String name) {
+			return container.getResource(name);
+		}
+
+		@Override
+		protected Enumeration<URL> findResources(String name) throws IOException {
+			return container.findResources(name);
+		}
+
+		@Override
+		public Enumeration<URL> getResources(String name) throws IOException {
+			return container.getResources(name);
+		}
+
+		@Override
+		protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+			synchronized (container.getClassLoadingLock(name)) {
+				return container.delegate.loadClass(name, container.originalLoader, this, resolve);
+			}
+		}
+
+		@Override
+		public Package getPackage(String name) {
+			return super.getPackage(name);
+		}
+
+		@Override
+		public Package definePackage(String name, String specTitle, String specVersion, String specVendor,
+				String implTitle, String implVersion, String implVendor, URL sealBase) throws IllegalArgumentException {
+			return super.definePackage(name, specTitle, specVersion, specVendor, implTitle, implVersion, implVendor, sealBase);
+		}
+
+		@Override
+		public Class<?> defineClassFwd(String name, byte[] b, int off, int len, CodeSource cs) {
+			return super.defineClass(name, b, off, len, cs);
+		}
+
+		@Override
+		public void resolveClassFwd(Class<?> c) {
+			super.resolveClass(c);
+		}
+
+		@Override
+		public Class<?> findLoadedClassFwd(String name) {
+			return super.findLoadedClass(name);
+		}
+
+		// Compat for Fabric-ASM
+		public void addUrl(URL url) {
+			container.addURL(url);
+		}
 	}
 }

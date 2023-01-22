@@ -19,6 +19,7 @@ package org.quiltmc.loader.impl.launch.knot;
 import net.fabricmc.api.EnvType;
 
 import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.loader.api.ModContainer.BasicSourceType;
 import org.quiltmc.loader.impl.FormattedException;
 import org.quiltmc.loader.impl.QuiltLoaderImpl;
 import org.quiltmc.loader.impl.config.QuiltConfigImpl;
@@ -27,6 +28,9 @@ import org.quiltmc.loader.impl.game.GameProvider;
 import org.quiltmc.loader.impl.ipc.QuiltRemoteWindowHelper;
 import org.quiltmc.loader.impl.launch.common.QuiltLauncherBase;
 import org.quiltmc.loader.impl.launch.common.QuiltMixinBootstrap;
+import org.quiltmc.loader.impl.util.FileUtil;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternal;
+import org.quiltmc.loader.impl.util.QuiltLoaderInternalType;
 import org.quiltmc.loader.impl.util.SystemProperties;
 import org.quiltmc.loader.impl.util.UrlUtil;
 import org.quiltmc.loader.impl.util.log.Log;
@@ -54,6 +58,7 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+@QuiltLoaderInternal(QuiltLoaderInternalType.LEGACY_EXPOSED)
 public final class Knot extends QuiltLauncherBase {
 	protected Map<String, Object> properties = new HashMap<>();
 
@@ -177,7 +182,9 @@ public final class Knot extends QuiltLauncherBase {
 			Log.warn(LogCategory.KNOT, "If you get a 'LinkageError' of 'attempted duplicated * definition' after this then this error is the cause!", cnfe);
 		}
 
+		classLoader.getDelegate().afterMixinIntiializeFinished();
 		QuiltRemoteWindowHelper.sendProgressUpdate("Invoking PreLaunch", 40);
+
 		loader.invokePreLaunch();
 		QuiltRemoteWindowHelper.sendProgressUpdate("Starting Minecraft", 49);
 
@@ -242,20 +249,13 @@ public final class Knot extends QuiltLauncherBase {
 			if (!flPath.getFileName().toString().endsWith(".jar")) return null; // not a jar
 
 			try (ZipFile zf = new ZipFile(flPath.toFile())) {
-				ZipEntry entry = zf.getEntry("META-INF/services/net.fabricmc.loader.impl.game.GameProvider"); // same file as used by service loader
+				ZipEntry entry = zf.getEntry("META-INF/services/org.quiltmc.loader.impl.game.GameProvider"); // same file as used by service loader
 				if (entry == null) return null;
 
 				try (InputStream is = zf.getInputStream(entry)) {
-					byte[] buffer = new byte[100];
-					int offset = 0;
-					int len;
+					byte[] buffer = FileUtil.readAllBytes(is);
 
-					while ((len = is.read(buffer, offset, buffer.length - offset)) >= 0) {
-						offset += len;
-						if (offset == buffer.length) buffer = Arrays.copyOf(buffer, buffer.length * 2);
-					}
-
-					String content = new String(buffer, 0, offset, StandardCharsets.UTF_8).trim();
+					String content = new String(buffer, 0, buffer.length, StandardCharsets.UTF_8).trim();
 					if (content.indexOf('\n') >= 0) return null; // potentially more than one entry -> bail out
 
 					int pos = content.indexOf('#');
@@ -312,6 +312,53 @@ public final class Knot extends QuiltLauncherBase {
 	}
 
 	@Override
+	public void setTransformCache(URL insideTransformCache) {
+		classLoader.getDelegate().setTransformCache(insideTransformCache);
+	}
+
+	@Override
+	public void validateGameClassLoader(Object gameInstance) {
+		ClassLoader gameClassLoader = gameInstance.getClass().getClassLoader();
+		ClassLoader targetClassLoader = QuiltLauncherBase.getLauncher().getTargetClassLoader();
+		boolean matchesKnot = isMatchingClassLoader(targetClassLoader, gameClassLoader);
+		boolean containsKnot = false;
+
+		if (matchesKnot) {
+			containsKnot = true;
+		} else {
+			ClassLoader parentClassLoader = gameClassLoader.getParent();
+
+			while (parentClassLoader != null && parentClassLoader.getParent() != parentClassLoader) {
+				if (isMatchingClassLoader(targetClassLoader, parentClassLoader)) {
+					containsKnot = true;
+					break;
+				}
+
+				parentClassLoader = parentClassLoader.getParent();
+			}
+		}
+
+		if (!matchesKnot) {
+			if (containsKnot) {
+				Log.info(LogCategory.KNOT, "Environment: Target class loader is parent of game class loader.");
+			} else {
+				Log.warn(LogCategory.KNOT, "\n\n* CLASS LOADER MISMATCH! THIS IS VERY BAD AND WILL PROBABLY CAUSE WEIRD ISSUES! *\n"
+						+ " - Expected game class loader: %s\n"
+						+ " - Actual game class loader: %s\n"
+						+ "Could not find the expected class loader in game class loader parents!\n",
+						QuiltLauncherBase.getLauncher().getTargetClassLoader(), gameClassLoader);
+			}
+		}
+	}
+
+	private static boolean isMatchingClassLoader(ClassLoader expected, ClassLoader actual) {
+		if (actual instanceof KnotSeparateClassLoader) {
+			return ((KnotSeparateClassLoader) actual).getBaseClassLoader() == expected;
+		}
+		return expected == actual;
+	}
+
+	@Override
 	public EnvType getEnvironmentType() {
 		return envType;
 	}
@@ -338,6 +385,14 @@ public final class Knot extends QuiltLauncherBase {
 	@Override
 	public ClassLoader getTargetClassLoader() {
 		return (ClassLoader) classLoader;
+	}
+
+	@Override
+	public ClassLoader getClassLoader(ModContainer mod) {
+		if (mod.getSourceType() == BasicSourceType.BUILTIN) {
+			return null;
+		}
+		return (ClassLoader) classLoader.getDelegate().getClassLoader(mod.metadata().id());
 	}
 
 	@Override
