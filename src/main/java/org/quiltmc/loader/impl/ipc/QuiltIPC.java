@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import org.quiltmc.loader.api.LoaderValue;
+import org.quiltmc.loader.api.LoaderValue.LType;
 import org.quiltmc.loader.api.plugin.LoaderValueFactory;
 
 /** Client entry point for opening communication to a local server. Fairly low level - */
@@ -130,6 +131,10 @@ public class QuiltIPC {
 		writerQueue = null;
 	}
 
+	public boolean isClosed() {
+		return closed;
+	}
+
 	private abstract class Sender {
 		// Empty
 	}
@@ -215,12 +220,17 @@ public class QuiltIPC {
 				DataOutputStream stream = new DataOutputStream(socket.getOutputStream());
 				while (true) {
 					try {
-						LoaderValue value = writerQueue.take();
+						BlockingQueue<LoaderValue> queue = writerQueue;
+						LoaderValue value = queue == null ? LoaderValueFactory.getFactory().nul() : queue.take();
 						ByteArrayOutputStream baos = new ByteArrayOutputStream();
 						LoaderValueFactory.getFactory().write(value, baos);
 						byte[] written = baos.toByteArray();
 						stream.writeInt(written.length);
 						stream.write(written);
+						if (queue == null) {
+							// Closed
+							return;
+						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 					}
@@ -247,6 +257,10 @@ public class QuiltIPC {
 					int length = stream.readInt();
 					LoaderValue value = LoaderValueFactory.getFactory().read(new LimitedInputStream(stream, length));
 					handler.execute(() -> msgHandler.accept(value));
+					if (value.type() == LType.NULL) {
+						close();
+						return;
+					}
 				}
 			} catch (IOException e) {
 				if (closed) {
