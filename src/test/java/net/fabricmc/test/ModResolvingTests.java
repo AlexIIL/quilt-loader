@@ -227,6 +227,14 @@ public final class ModResolvingTests {
 	}
 
 	@Test
+	public void quiltLoadTypeAlways() throws Exception {
+		ModSolveResult modSet = resolveModSet("valid", "quilt_load_type_always");
+
+		assertModPresent(modSet, "mod-resolving-tests-main", "1.0.0");
+		assertNoMoreMods(modSet);
+	}
+
+	@Test
 	public void quiltIncludedDep() throws Exception {
 		ModSolveResult modSet = resolveModSet("valid", "quilt_included_dep");
 
@@ -334,10 +342,11 @@ public final class ModResolvingTests {
 
 		Path game = testLocation.resolve("game_dir");
 		Path config = testLocation.resolve("config_dir");
+		Path cache = testLocation.resolve(".cache");
 		Path modRoot = testLocation.resolve(type).resolve(subpath);
 		final ModSolveResultImpl result;
 
-		QuiltPluginManagerImpl pluginManager = new QuiltPluginManagerForTests(game, config, modRoot);
+		QuiltPluginManagerImpl pluginManager = new QuiltPluginManagerForTests(game, config, modRoot, cache);
 
 		try {
 			result = pluginManager.run(false);
