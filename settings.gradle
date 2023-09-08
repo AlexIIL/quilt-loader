@@ -2,7 +2,7 @@ pluginManagement {
 	repositories {
 		maven {
 			name = 'Quilt Releases'
-			url = 'https://maven.quiltmc.org/repository/release/'
+			url = 'https://alexiil.uk/mirrors/maven.quiltmc.org/repo2/repository/release/maven/'
 		}
 		maven {
 			name = "Fabric"
