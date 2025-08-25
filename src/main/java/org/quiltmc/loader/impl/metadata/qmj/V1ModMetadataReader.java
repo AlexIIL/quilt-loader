@@ -286,7 +286,7 @@ public final class V1ModMetadataReader {
 			JsonLoaderValue intermediateMappingsValue = quiltLoader.get(QLKeys.INTERMEDIATE_MAPPINGS);
 
 			String[] supported_mappings = { "org.quiltmc:hashed", "net.fabricmc:intermediary", "org.quiltmc.experimental:mojang" };
-			String mappings = "org.quiltmc:hashed";
+			String mappings = "net.fabricmc:intermediary";
 
 			if (intermediateMappingsValue != null) {
 				if (intermediateMappingsValue.type() != LoaderValue.LType.STRING) {
